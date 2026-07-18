@@ -7,9 +7,10 @@ and consequential writes so a tester can stop at the authorized boundary.
 > [!WARNING]
 > Use only a device, mailbox, messages, calendar, and recipients you are
 > authorized to test. Complete SSO, MFA, Conditional Access, and organization
-> notices only in the visible browser. Never paste a password, MFA code, cookie,
-> bearer value, canary, browser profile, or raw OWA response into a terminal,
-> issue, chat, or test report.
+> notices only in the visible browser or the explicit text-only browser relay.
+> Never put a password or MFA code in a shell command, pipe, issue, chat, or
+> test report. Never copy a cookie, bearer value, canary, browser profile, or
+> raw OWA response outside the dedicated session.
 
 ## Test scope
 
@@ -259,10 +260,10 @@ owa doctor --online --json
 owa daemon status --json
 ```
 
-Complete sign-in, MFA, notices, and Conditional Access in the visible dedicated
-browser. Never type credentials into the CLI. The online doctor may request at
-most one folder metadata row, one inbox metadata row, and one one-hour calendar
-window, then discards them.
+For the default path, complete sign-in, MFA, notices, and Conditional Access in
+the visible dedicated browser; do not type credentials at a shell prompt. The
+online doctor may request at most one folder metadata row, one inbox metadata
+row, and one one-hour calendar window, then discards them.
 
 Pass criteria:
 
@@ -270,6 +271,12 @@ Pass criteria:
 - stdout contains no mailbox address, folder or item data, authorization, or
   OWA response body;
 - no Outlook item changes.
+
+For the optional SSH relay check, run `owa login --terminal` instead of
+`owa login --json`. Enter browser-field keystrokes only while its interactive
+relay is active; piped input is rejected. Record only whether the flow passed,
+not identity-provider page text or entered values. Then run the remaining JSON
+commands unchanged.
 
 The JSON report is designed to be content-free, but review error strings for
 local paths before sharing it.

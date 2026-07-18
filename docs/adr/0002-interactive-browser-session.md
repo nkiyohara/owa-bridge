@@ -1,6 +1,6 @@
 # ADR 0002: Interactive browser-owned authentication
 
-- Status: accepted
+- Status: accepted; extended by [ADR 0006](0006-text-terminal-browser-login.md)
 - Date: 2026-07-17
 
 ## Context
@@ -18,6 +18,7 @@ the browser security context when practical.
 
 ## Consequences
 
-Initial login requires a visible browser. The approach preserves the identity
-provider's controls but depends on undocumented Outlook Web behavior. Protocol
-capability probes and fixtures are mandatory.
+Initial login requires either a visible browser or the explicit text-only
+browser relay. Both approaches preserve the identity provider's controls but
+depend on undocumented Outlook Web behavior. Protocol capability probes and
+fixtures are mandatory.

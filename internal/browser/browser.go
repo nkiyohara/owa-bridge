@@ -22,6 +22,7 @@ type Options struct {
 	Origin     string
 	ProfileDir string
 	Executable string
+	Headless   bool
 }
 
 // Browser owns a Chromium process, target, observer, and session manager.
@@ -30,6 +31,7 @@ type Browser struct {
 	cancelContext   context.CancelFunc
 	cancelAllocator context.CancelFunc
 	sessions        *session.Manager
+	interactionMu   sync.Mutex
 	closeOnce       sync.Once
 	closeErr        error
 }
@@ -60,7 +62,7 @@ func Launch(parent context.Context, options Options) (*Browser, error) {
 		execOptions,
 		chromedp.ExecPath(executable),
 		chromedp.UserDataDir(options.ProfileDir),
-		chromedp.Flag("headless", false),
+		chromedp.Flag("headless", options.Headless),
 		chromedp.Flag("disable-gpu", false),
 		chromedp.NoFirstRun,
 		chromedp.NoDefaultBrowserCheck,
@@ -91,6 +93,12 @@ func Launch(parent context.Context, options Options) (*Browser, error) {
 // WaitForSession waits for an authorized first-party Outlook Web request.
 func (browser *Browser) WaitForSession(ctx context.Context) (session.Credentials, error) {
 	return browser.sessions.Wait(ctx)
+}
+
+// CurrentSession returns the current browser-observed authorization snapshot
+// without waiting for a new request.
+func (browser *Browser) CurrentSession() (session.Credentials, error) {
+	return browser.sessions.Current()
 }
 
 // Apply applies the newest browser-observed credentials to an exact-origin

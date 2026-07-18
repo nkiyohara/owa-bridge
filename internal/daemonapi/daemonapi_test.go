@@ -28,6 +28,7 @@ type fakeBackend struct {
 	createInput       application.CalendarCreateInput
 	updateInput       application.CalendarUpdateInput
 	cancelInput       application.CalendarCancelInput
+	terminalInput     TerminalLoginInput
 	commitToken       string
 	caller            domain.Caller
 }
@@ -35,6 +36,21 @@ type fakeBackend struct {
 func (backend *fakeBackend) DefaultAccount() domain.AccountID { return "work" }
 func (*fakeBackend) Login(_ context.Context, account domain.AccountID, _ domain.Caller) (LoginResult, error) {
 	return LoginResult{Account: account, Authenticated: true, CapturedAt: time.Unix(2, 0)}, nil
+}
+func (backend *fakeBackend) TerminalLogin(_ context.Context, input TerminalLoginInput, caller domain.Caller) (TerminalLoginResult, error) {
+	backend.terminalInput, backend.caller = input, caller
+	if input.SessionID == "" {
+		return TerminalLoginResult{
+			Account: input.Account, SessionID: "tls1_" + strings.Repeat("a", 32), Status: "pending",
+			View: &TerminalLoginView{
+				Origin: "https://login.example", Title: "Sign in", Text: "Continue",
+				Controls: []TerminalLoginControl{{ID: "control-1", Kind: "input", Name: "Email"}},
+			},
+		}, nil
+	}
+	return TerminalLoginResult{
+		Account: input.Account, Status: "authenticated", CapturedAt: time.Unix(3, 0),
+	}, nil
 }
 func (backend *fakeBackend) ListMail(_ context.Context, input application.MailListInput, caller domain.Caller) (application.MailPage, error) {
 	backend.mailInput, backend.caller = input, caller
@@ -197,6 +213,18 @@ func TestClientAndServerRoundTripOverLocalIPC(t *testing.T) {
 	login, err := client.Login(t.Context(), "work", caller)
 	if err != nil || !login.Authenticated || login.Account != "work" {
 		t.Fatalf("Login() = %+v, %v", login, err)
+	}
+	terminalLogin, err := client.TerminalLogin(t.Context(), TerminalLoginInput{Account: "work"}, caller)
+	if err != nil || terminalLogin.Status != "pending" || terminalLogin.View == nil ||
+		len(terminalLogin.View.Controls) != 1 {
+		t.Fatalf("TerminalLogin(start) = %+v, %v", terminalLogin, err)
+	}
+	terminalLogin, err = client.TerminalLogin(t.Context(), TerminalLoginInput{
+		Account: "work", SessionID: terminalLogin.SessionID,
+		Action: &TerminalLoginAction{Type: "key", ControlID: "control-1", Key: "a"},
+	}, caller)
+	if err != nil || terminalLogin.Status != "authenticated" || backend.terminalInput.Action.Key != "a" {
+		t.Fatalf("TerminalLogin(continue) = %+v, %v; input=%+v", terminalLogin, err, backend.terminalInput)
 	}
 	page, err := client.ListMail(t.Context(), application.MailListInput{
 		Account: "work", Folder: application.MailFolder{Kind: application.MailFolderDistinguished, ID: "inbox"},

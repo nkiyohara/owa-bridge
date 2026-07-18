@@ -10,13 +10,15 @@ import (
 	"fmt"
 	"regexp"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/nkiyohara/owa-bridge/internal/application"
 	"github.com/nkiyohara/owa-bridge/internal/domain"
 )
 
 const (
-	ProtocolVersion   = 7
+	ProtocolVersion   = 8
 	maxRequestBytes   = 8 << 20
 	maxResponseBytes  = 16 << 20
 	contentType       = "application/json"
@@ -32,6 +34,7 @@ const (
 	MethodStatus               Method = "status"
 	MethodShutdown             Method = "shutdown"
 	MethodLogin                Method = "login"
+	MethodTerminalLogin        Method = "login.terminal"
 	MethodMailFolders          Method = "mail.folders.list"
 	MethodMailList             Method = "mail.list"
 	MethodMailSearch           Method = "mail.search"
@@ -55,6 +58,8 @@ const (
 )
 
 var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,96}$`)
+var terminalSessionIDPattern = regexp.MustCompile(`^tls1_[A-Za-z0-9_-]{32,64}$`)
+var terminalControlIDPattern = regexp.MustCompile(`^control-[1-9][0-9]{0,2}$`)
 
 type requestEnvelope struct {
 	Version int             `json:"version"`
@@ -111,6 +116,103 @@ type LoginResult struct {
 	CapturedAt    time.Time        `json:"capturedAt"`
 }
 
+// TerminalLoginInput starts or advances one caller-bound text-only browser
+// interaction. A start request has only Account; subsequent requests include a
+// SessionID and one bounded action.
+type TerminalLoginInput struct {
+	Account   domain.AccountID     `json:"account"`
+	SessionID string               `json:"sessionId,omitempty"`
+	Action    *TerminalLoginAction `json:"action,omitempty"`
+}
+
+// TerminalLoginAction is one browser control activation, focus request, key,
+// or page refresh. Key actions never carry more than one character.
+type TerminalLoginAction struct {
+	Type      string `json:"type"`
+	ControlID string `json:"controlId,omitempty"`
+	Key       string `json:"key,omitempty"`
+}
+
+// TerminalLoginControl is one visible browser control in the bounded terminal
+// view. Form values and selectors are never returned.
+type TerminalLoginControl struct {
+	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Sensitive bool   `json:"sensitive,omitempty"`
+	Disabled  bool   `json:"disabled,omitempty"`
+}
+
+// TerminalLoginView is an accessibility-oriented page projection. Origin is
+// intentionally path-free so identity-provider query values cannot escape.
+type TerminalLoginView struct {
+	Origin   string                 `json:"origin,omitempty"`
+	Title    string                 `json:"title,omitempty"`
+	Text     string                 `json:"text,omitempty"`
+	Controls []TerminalLoginControl `json:"controls"`
+}
+
+// TerminalLoginResult reports either the next text interaction or completed
+// authentication without exposing authorization material.
+type TerminalLoginResult struct {
+	Account    domain.AccountID   `json:"account"`
+	SessionID  string             `json:"sessionId,omitempty"`
+	Status     string             `json:"status"`
+	CapturedAt time.Time          `json:"capturedAt,omitempty"`
+	View       *TerminalLoginView `json:"view,omitempty"`
+}
+
+func (input TerminalLoginInput) validate() error {
+	if err := input.Account.Validate(); err != nil {
+		return err
+	}
+	if input.SessionID == "" {
+		if input.Action != nil {
+			return errors.New("a terminal login start cannot include an action")
+		}
+		return nil
+	}
+	if !terminalSessionIDPattern.MatchString(input.SessionID) {
+		return errors.New("invalid terminal login session ID")
+	}
+	if input.Action == nil {
+		return errors.New("a terminal login continuation requires an action")
+	}
+	return input.Action.validate()
+}
+
+func (action TerminalLoginAction) validate() error {
+	switch action.Type {
+	case "refresh", "cancel":
+		if action.ControlID != "" || action.Key != "" {
+			return errors.New("terminal refresh or cancellation cannot include a control or key")
+		}
+		return nil
+	case "activate", "focus":
+		if !terminalControlIDPattern.MatchString(action.ControlID) || action.Key != "" {
+			return errors.New("invalid terminal control action")
+		}
+		return nil
+	case "key":
+		if !terminalControlIDPattern.MatchString(action.ControlID) {
+			return errors.New("invalid terminal key control")
+		}
+		if action.Key == "enter" || action.Key == "backspace" || action.Key == "tab" {
+			return nil
+		}
+		if utf8.RuneCountInString(action.Key) != 1 {
+			return errors.New("terminal key must contain exactly one rune")
+		}
+		key, _ := utf8.DecodeRuneInString(action.Key)
+		if unicode.IsControl(key) || unicode.Is(unicode.Cf, key) {
+			return errors.New("terminal key contains an unsupported control character")
+		}
+		return nil
+	default:
+		return errors.New("unsupported terminal login action")
+	}
+}
+
 // Backend is the complete typed surface hosted by the session owner.
 type Backend interface {
 	DefaultAccount() domain.AccountID
@@ -137,9 +239,15 @@ type Backend interface {
 	CommitCalendarCancel(context.Context, string, domain.Caller) (application.CalendarCancelAccess, error)
 }
 
+// TerminalLoginBackend is implemented by session owners that support the
+// optional text-only interactive authentication extension.
+type TerminalLoginBackend interface {
+	TerminalLogin(context.Context, TerminalLoginInput, domain.Caller) (TerminalLoginResult, error)
+}
+
 func (method Method) valid() bool {
 	switch method {
-	case MethodStatus, MethodShutdown, MethodLogin, MethodMailFolders, MethodMailList, MethodMailSearch, MethodMailGetBody, MethodMailCommitBody,
+	case MethodStatus, MethodShutdown, MethodLogin, MethodTerminalLogin, MethodMailFolders, MethodMailList, MethodMailSearch, MethodMailGetBody, MethodMailCommitBody,
 		MethodMailCreateDraft, MethodMailCommitDraft, MethodMailSend, MethodMailCommitSend,
 		MethodMailMove, MethodMailCommitMove,
 		MethodMailReadState, MethodMailCommitState,

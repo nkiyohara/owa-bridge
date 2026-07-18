@@ -28,6 +28,13 @@ type browserHandle interface {
 	Close() error
 }
 
+type terminalBrowserHandle interface {
+	browserHandle
+	CurrentSession() (session.Credentials, error)
+	TerminalSnapshot(context.Context) (browser.TerminalView, error)
+	TerminalAct(context.Context, browser.TerminalAction) error
+}
+
 type browserLauncher func(context.Context, browser.Options) (browserHandle, error)
 
 type commandRunner func(context.Context, io.Writer, io.Writer, string, ...string) error

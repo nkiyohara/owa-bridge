@@ -24,7 +24,10 @@ automation framework.
 
 ### Authentication
 
-- Never collect or persist the user's password.
+- Never accept or persist a password as a command argument, configuration
+  value, structured API field, log entry, or complete terminal-relay value.
+- Restrict terminal login to an interactive TTY and relay at most one sanitized
+  key event per authenticated local IPC request; never expose it through MCP.
 - Never automate around MFA, Conditional Access, or consent screens.
 - Never use a TLS interception proxy.
 - Prefer browser-context execution; otherwise keep captured bearer material in
@@ -73,6 +76,7 @@ automation framework.
 ## Explicitly unsupported
 
 - unattended username/password sign-in;
+- scripted or piped terminal-login input;
 - tenant-wide or delegated access to other users' mailboxes;
 - remotely exposed MCP without an independent secure deployment layer;
 - defeating an organization's technical or administrative controls;
