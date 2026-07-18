@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a reproducible bug using synthetic or content-free data.
+title: "bug: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security concerns belong in the security reporting channel. Never attach
+        a browser profile, capture, OWA payload, mailbox data, or authorization.
+
+  - type: input
+    id: version
+    attributes:
+      label: owa version
+      description: Paste version and commit only.
+    validations:
+      required: true
+
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: Use synthetic values and content-free errors.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Redact local paths and use example.invalid identities.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: This report contains no mailbox, tenant, or session data.
+          required: true

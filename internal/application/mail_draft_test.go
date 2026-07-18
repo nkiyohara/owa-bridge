@@ -1,0 +1,112 @@
+package application
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/nkiyohara/owa-bridge/internal/approval"
+	"github.com/nkiyohara/owa-bridge/internal/domain"
+	"github.com/nkiyohara/owa-bridge/internal/policy"
+)
+
+func validDraftInput() MailDraftInput {
+	return MailDraftInput{
+		Account: "work",
+		To:      []string{"alice@example.invalid"},
+		Subject: "Synthetic draft",
+		Body:    "Draft body",
+	}
+}
+
+func TestMailDraftIsSaveOnlyReversibleWrite(t *testing.T) {
+	t.Parallel()
+
+	reader := &fakeMailReader{}
+	service, recorder := testMailService(t, reader)
+	access, err := service.CreateDraft(
+		context.Background(), validDraftInput(),
+		domain.Caller{Surface: "cli", Instance: "process-1"},
+	)
+	if err != nil {
+		t.Fatalf("CreateDraft() error = %v", err)
+	}
+	if access.Status != "completed" || access.Draft == nil || access.Draft.ID != "draft-1" {
+		t.Fatalf("unexpected access: %+v", access)
+	}
+	if len(recorder.events) != 2 || recorder.events[0].Operation.Effect != domain.EffectReversibleWrite {
+		t.Fatalf("unexpected audit events: %+v", recorder.events)
+	}
+}
+
+func TestMailDraftValidationBoundsRecipientsAndContent(t *testing.T) {
+	t.Parallel()
+
+	tests := []MailDraftInput{
+		{},
+		{Account: "work"},
+		{Account: "work", To: []string{"Display Name <alice@example.invalid>"}},
+		{Account: "work", To: []string{"alice@example.invalid\nBCC: injected@example.invalid"}},
+		{Account: "work", Subject: "line one\nline two"},
+		{Account: "work", Subject: string([]byte{0xff})},
+		{Account: "work", Body: string([]byte{0xff})},
+		{Account: "work", Body: strings.Repeat("x", MaxMailDraftBodyBytes+1)},
+		{Account: "work", To: []string{"a@example.invalid", "b@example.invalid"}},
+	}
+	for index, input := range tests {
+		limit := 20
+		if index == len(tests)-1 {
+			limit = 1
+		}
+		if err := input.Validate(limit); err == nil {
+			t.Fatalf("Validate(%+v, %d) unexpectedly succeeded", input, limit)
+		}
+	}
+}
+
+func TestMailDraftReviewBoundsPreviewAndBindsFullBody(t *testing.T) {
+	t.Parallel()
+
+	input := validDraftInput()
+	input.Body = strings.Repeat("界", 600)
+	review := input.Review()
+	if !strings.HasSuffix(review.BodyPreview, "…") || review.BodyBytes != len(input.Body) ||
+		len(review.BodySHA256) != 64 {
+		t.Fatalf("unexpected review: %+v", review)
+	}
+}
+
+func TestMailDraftApprovalCannotBeConsumedByBodyTool(t *testing.T) {
+	t.Parallel()
+
+	store, err := approval.NewStore(approval.Options{})
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	guard, err := NewGuard(policy.Rules{
+		Mode: policy.ModeGuarded, PreviewReversibleWrites: true,
+	}, store, &memoryAudit{})
+	if err != nil {
+		t.Fatalf("NewGuard() error = %v", err)
+	}
+	reader := &fakeMailReader{}
+	service, err := NewMailService(guard, reader, MailOptions{MaxRecipients: 20})
+	if err != nil {
+		t.Fatalf("NewMailService() error = %v", err)
+	}
+	caller := domain.Caller{Surface: "mcp", Instance: "session-1"}
+	preview, err := service.CreateDraft(t.Context(), validDraftInput(), caller)
+	if err != nil || preview.Preview == nil {
+		t.Fatalf("CreateDraft() = %+v, %v", preview, err)
+	}
+	if _, err := service.CommitBody(t.Context(), preview.Preview.Token, caller); err == nil {
+		t.Fatal("CommitBody() unexpectedly accepted a draft approval")
+	}
+	committed, err := service.CommitDraft(t.Context(), preview.Preview.Token, caller)
+	if err != nil {
+		t.Fatalf("CommitDraft() error = %v", err)
+	}
+	if committed.Draft == nil || committed.Draft.ID != "draft-1" || reader.calls != 1 {
+		t.Fatalf("unexpected draft commit: %+v calls=%d", committed, reader.calls)
+	}
+}

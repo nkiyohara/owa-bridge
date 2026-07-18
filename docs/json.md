@@ -1,0 +1,113 @@
+# JSON output contract
+
+`--json` and MCP structured content serialize the same application result
+types. Field names use lower camel case. Optional scalar fields are omitted
+when Outlook does not return a value; result arrays are empty arrays rather
+than `null`. Empty nested address metadata can appear as `{}`. Mailbox content
+and identifiers in the examples below are synthetic.
+
+## Read results
+
+<!-- markdownlint-disable MD013 -->
+
+| Command or tool | Top-level fields | Item fields |
+| --- | --- | --- |
+| Mail folders | `folders`, `totalFolders`, `includesLastItem` | `id`, optional `changeKey`, `parentId`, `displayName`, `class`, `distinguishedId`; `childFolderCount`, `totalItemCount`, `unreadItemCount` |
+| Mail list and search | `messages`, `totalItemsInView`, `includesLastItem` | `id`, optional `changeKey`, `subject`, `from`, `receivedAt`, `importance`; `isRead`, `hasAttachments` |
+| Calendar list | `events`, `start`, `end` | `id`, optional `changeKey`, `subject`, `location`, `organizer`, `myResponse`, `freeBusy`; `start`, `end`, `isAllDay`, `isOnlineMeeting`, `isOrganizer`, `isCancelled` |
+
+<!-- markdownlint-enable MD013 -->
+
+`from` and `organizer` contain optional `name` and `address` fields. Calendar
+list results exclude bodies, attendee lists, attachments, and meeting join
+URLs.
+
+An immediate body result has this shape:
+
+```json
+{
+  "status": "completed",
+  "body": {
+    "id": "message-1",
+    "changeKey": "change-2",
+    "text": "Synthetic plain-text body"
+  }
+}
+```
+
+## Preview results
+
+A gated operation first returns `status: "approval_required"`, an operation-
+specific `review`, and a `preview`:
+
+```json
+{
+  "status": "approval_required",
+  "review": {
+    "to": ["reader@example.invalid"],
+    "subject": "Synthetic message",
+    "bodyPreview": "Synthetic body",
+    "bodyBytes": 14,
+    "bodySha256": "24a225060015d36ac2507b199f561043ed5374faada4fb75c880c19017f40038"
+  },
+  "preview": {
+    "token": "REDACTED",
+    "expiresAt": "2026-07-18T12:02:00Z",
+    "operation": {
+      "name": "mail.send",
+      "effect": "external_write",
+      "account": "work",
+      "digest": "1e6887a57c5e7f647590cc3beef1be2f3c1f3e2ff018e80ccfeea349652b7184"
+    }
+  }
+}
+```
+
+The token is a secret, one-time capability. Do not log or persist it. CLI
+`--approve` regenerates and consumes the in-process preview from the same exact
+arguments; MCP passes the returned token only to the matching commit tool.
+
+Reviews bind the complete input while bounding displayed content:
+
+<!-- markdownlint-disable MD013 -->
+
+| Operation | Review fields |
+| --- | --- |
+| Draft or send | optional `to`, `cc`, `bcc`, `subject`, `bodyPreview`; required `bodyBytes`, `bodySha256` |
+| Mail move | `messageId`, `changeKey`, `destination` |
+| Read-state update | `messageId`, `changeKey`, `state` |
+| Calendar create | `calendar`, optional subject/body/location/attendees, start/end, `bodyBytes`, `bodySha256`, `invitationsWillBeSent`, `teamsMeeting` |
+| Calendar update | `eventId`, `changeKey`, only supplied patch fields, bounded body review, `meetingUpdateMode` |
+| Calendar cancellation | `eventId`, `changeKey`, `cancellationMode`, `deleteType` |
+
+<!-- markdownlint-enable MD013 -->
+
+## Commit results
+
+<!-- markdownlint-disable MD013 -->
+
+| Operation | Success status | Result object and fields |
+| --- | --- | --- |
+| Body read | `completed` | `body`: `id`, optional `changeKey`, `text` |
+| Draft save | `completed` | `draft`: `id`, optional `changeKey` |
+| New send | `sent` | `sent`: optional `id`, `changeKey` |
+| Mail move | `completed` | `moved`: optional `id`, `changeKey` |
+| Read-state update | `completed` | `updated`: optional `id`, `changeKey`; required `state` |
+| Calendar create | `created` | `created`: `id`, optional `changeKey`, required `isOnlineMeeting`, optional `onlineMeetingProvider`, `onlineMeetingJoinUrl` |
+| Calendar update | `updated` | `updated`: optional `id`, `changeKey` |
+| Calendar cancellation | `cancelled` | `cancelled`: `id` |
+
+<!-- markdownlint-enable MD013 -->
+
+Write success objects also include the exact bounded `review`. Empty optional
+identities do not mean failure: Outlook sometimes confirms a write without
+returning a refreshed item identity. A transport failure after submission is
+reported as an unknown outcome instead of being converted into success or
+automatically retried.
+
+## Compatibility policy
+
+These are stable adapter contracts, not raw Outlook payloads. OWA wire changes
+are normalized behind the transport boundary and represented by synthetic
+contract fixtures. Additive fields can appear in a future minor release;
+renames or semantic changes require a versioned compatibility decision.

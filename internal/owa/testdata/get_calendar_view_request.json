@@ -1,0 +1,26 @@
+{
+  "__type": "GetCalendarViewJsonRequest:#Exchange",
+  "Header": {
+    "__type": "JsonRequestHeaders:#Exchange",
+    "RequestServerVersion": "Exchange2013",
+    "TimeZoneContext": {
+      "__type": "TimeZoneContext:#Exchange",
+      "TimeZoneDefinition": {
+        "__type": "TimeZoneDefinitionType:#Exchange",
+        "Id": "UTC"
+      }
+    }
+  },
+  "Body": {
+    "__type": "GetCalendarViewRequest:#Exchange",
+    "CalendarId": {
+      "__type": "TargetFolderId:#Exchange",
+      "BaseFolderId": {
+        "__type": "DistinguishedFolderId:#Exchange",
+        "Id": "calendar"
+      }
+    },
+    "RangeStart": "2026-07-17T00:00:00.000",
+    "RangeEnd": "2026-07-18T00:00:00.000"
+  }
+}

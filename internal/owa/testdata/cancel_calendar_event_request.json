@@ -1,0 +1,28 @@
+{
+  "__type": "DeleteItemJsonRequest:#Exchange",
+  "Header": {
+    "__type": "JsonRequestHeaders:#Exchange",
+    "RequestServerVersion": "Exchange2013",
+    "TimeZoneContext": {
+      "__type": "TimeZoneContext:#Exchange",
+      "TimeZoneDefinition": {
+        "__type": "TimeZoneDefinitionType:#Exchange",
+        "Id": "UTC"
+      }
+    }
+  },
+  "Body": {
+    "__type": "DeleteItemRequest:#Exchange",
+    "ItemIds": [
+      {
+        "__type": "ItemId:#Exchange",
+        "Id": "synthetic-event-1",
+        "ChangeKey": "synthetic-change-1"
+      }
+    ],
+    "DeleteType": "MoveToDeletedItems",
+    "SendMeetingCancellations": "SendToAllAndSaveCopy",
+    "AffectedTaskOccurrences": "AllOccurrences",
+    "SuppressReadReceipts": true
+  }
+}

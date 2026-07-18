@@ -1,0 +1,23 @@
+{
+  "Body": {
+    "ResponseMessages": {
+      "Items": [
+        {
+          "ResponseClass": "Success",
+          "ResponseCode": "NoError",
+          "Items": [
+            {
+              "ItemId": {
+                "Id": "synthetic-event-created-1",
+                "ChangeKey": "synthetic-change-created-1"
+              },
+              "IsOnlineMeeting": true,
+              "OnlineMeetingProvider": "TeamsForBusiness",
+              "OnlineMeetingJoinUrl": "https://teams.example.invalid/l/meetup-join/synthetic"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

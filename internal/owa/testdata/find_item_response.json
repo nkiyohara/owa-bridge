@@ -1,0 +1,56 @@
+{
+  "Header": {
+    "ServerVersionInfo": {
+      "MajorVersion": 15,
+      "MinorVersion": 20,
+      "Version": "Synthetic"
+    }
+  },
+  "Body": {
+    "ResponseMessages": {
+      "Items": [
+        {
+          "__type": "FindItemResponseMessage:#Exchange",
+          "ResponseClass": "Success",
+          "ResponseCode": "NoError",
+          "RootFolder": {
+            "Items": [
+              {
+                "__type": "Message:#Exchange",
+                "ItemId": {"Id": "synthetic-message-1", "ChangeKey": "change-1"},
+                "Subject": "Synthetic project update",
+                "From": {
+                  "Mailbox": {
+                    "Name": "Alice Example",
+                    "EmailAddress": "alice@example.invalid"
+                  }
+                },
+                "DateTimeReceived": "2026-07-17T10:30:00Z",
+                "Importance": "Normal",
+                "IsRead": false,
+                "HasAttachments": true
+              },
+              {
+                "__type": "Message:#Exchange",
+                "ItemId": {"Id": "synthetic-message-2", "ChangeKey": "change-2"},
+                "Subject": "Synthetic follow-up",
+                "From": {
+                  "Mailbox": {
+                    "Name": "Bob Example",
+                    "EmailAddress": "bob@example.invalid"
+                  }
+                },
+                "DateTimeReceived": "2026-07-17T09:15:00Z",
+                "Importance": "High",
+                "IsRead": true,
+                "HasAttachments": false
+              }
+            ],
+            "TotalItemsInView": 42,
+            "IncludesLastItemInRange": false
+          }
+        }
+      ]
+    }
+  }
+}

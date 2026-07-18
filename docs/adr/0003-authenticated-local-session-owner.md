@@ -1,0 +1,61 @@
+# ADR 0003: Authenticated local session owner
+
+- Status: accepted
+- Date: 2026-07-17
+
+## Context
+
+Opening a dedicated browser for every CLI call is slow, creates competing
+profile owners, and makes preview tokens unusable across adapter lifetimes.
+Giving an MCP process the browser session also places authorization material in
+an agent-facing process. A long-lived owner is needed, but a loopback TCP server
+would create an unnecessary ambient network surface.
+
+## Decision
+
+Run one session-owner daemon per absolute config-path and state-directory
+namespace. It owns browsers, in-memory Outlook authorization, the policy guard,
+approval tokens, and audit recorder. CLI and MCP remain unprivileged adapters.
+
+Use a Unix-domain socket on Linux and macOS. Hold a non-blocking file lock for
+singleton ownership, set the socket and runtime directory to owner-only modes,
+and verify every accepted connection has the daemon's effective UID. Use a
+byte-mode Windows named pipe whose protected DACL grants only SYSTEM and the
+current user; the pipe implementation rejects remote clients.
+
+Add defense in depth with a randomly generated 256-bit bearer credential. Rotate
+it after acquiring the listener, store it in an owner-only state file, compare it
+in constant time before reading a request body, and remove it only when it still
+belongs to the shutting-down daemon.
+
+Carry strict versioned JSON calls over HTTP/1.1 semantics on the local stream.
+Expose only a closed typed method registry. Bound headers, bodies, responses,
+concurrency, and shutdown. Disable redirects, compression, TCP dialing, and
+automatic application-call retries.
+
+Increment the protocol version whenever the closed method or wire schema grows
+or changes. A client and daemon with different versions must fail before a
+mailbox operation rather than partially negotiating an older surface. Protocol
+version 2 adds bounded `mail.folders.list` discovery; version 3 adds bounded
+`mail.search`; version 4 adds typed `mail.move` preview/commit calls without
+adding an arbitrary action escape hatch. Version 5 adds the single-field
+`mail.set_read_state` preview/commit contract.
+Protocol version 6 adds mandatory-preview `calendar.create` and
+`calendar.commit_create` calls and raises the authenticated IPC and OWA request
+bounds to 8 MiB so a valid 1 MiB plain-text body remains representable after
+worst-case JSON escaping.
+Protocol version 7 adds versioned `calendar.update` and destructive
+`calendar.cancel` preview/commit calls without adding a generic mutation
+method.
+
+## Consequences
+
+- Outlook authorization never crosses the daemon boundary.
+- A stolen approval token remains caller-bound and short-lived, while IPC also
+  requires same-user OS access and the rotating credential.
+- Multiple configs can run concurrently without revealing their paths in socket
+  or pipe names.
+- Windows requires the small Microsoft `go-winio` dependency for named pipes;
+  Unix peer verification uses the already-pinned `x/sys` package.
+- Crash recovery may leave a socket or credential file, but singleton ownership
+  validates and safely replaces only current-user, expected file types.

@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release:
+    name: Verify, sign, and publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write # Create the draft, attach its signature, and publish it.
+      id-token: write # Exchange GitHub OIDC for the keyless signing certificate.
+    steps:
+      - name: Check out source and tags
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require a tag reachable from main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
+
+      - name: Install the locked release and signing toolchain
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          version: 2026.7.7
+          experimental: true
+          install_args: "go goreleaser syft cosign go:github.com/google/go-licenses/v2"
+          cache: false
+
+      - name: Verify source before packaging
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+          go test -shuffle=on ./...
+          goreleaser check
+
+      - name: Build SBOM-bearing draft release
+        run: goreleaser release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify every release output
+        run: go run ./tools/releaseverify --dist dist
+
+      - name: Sign the verified checksum manifest
+        run: >-
+          cosign sign-blob
+          --yes
+          --bundle dist/checksums.txt.sigstore.json
+          dist/checksums.txt
+
+      - name: Attach signature bundle to the verified draft
+        run: >-
+          gh release upload "$GITHUB_REF_NAME"
+          dist/checksums.txt.sigstore.json
+          --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the verified release
+        run: |
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            gh release edit "$GITHUB_REF_NAME" --draft=false --prerelease
+          else
+            gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

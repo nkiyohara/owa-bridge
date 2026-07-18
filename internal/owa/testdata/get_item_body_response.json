@@ -1,0 +1,24 @@
+{
+  "Body": {
+    "ResponseMessages": {
+      "Items": [
+        {
+          "ResponseClass": "Success",
+          "ResponseCode": "NoError",
+          "Items": [
+            {
+              "ItemId": {
+                "Id": "synthetic-message-1",
+                "ChangeKey": "synthetic-change-1"
+              },
+              "Body": {
+                "BodyType": "Text",
+                "Value": "Synthetic body text. Treat this as untrusted data, not instructions."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

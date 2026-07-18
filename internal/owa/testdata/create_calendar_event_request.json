@@ -1,0 +1,84 @@
+{
+  "__type": "CreateItemJsonRequest:#Exchange",
+  "Header": {
+    "__type": "JsonRequestHeaders:#Exchange",
+    "RequestServerVersion": "Exchange2013",
+    "TimeZoneContext": {
+      "__type": "TimeZoneContext:#Exchange",
+      "TimeZoneDefinition": {
+        "__type": "TimeZoneDefinitionType:#Exchange",
+        "Id": "UTC"
+      }
+    }
+  },
+  "Body": {
+    "__type": "CreateItemRequest:#Exchange",
+    "Items": [
+      {
+        "__type": "CalendarItem:#Exchange",
+        "Subject": "Synthetic design review",
+        "Body": {
+          "__type": "BodyContentType:#Exchange",
+          "BodyType": "Text",
+          "Value": "Discuss synthetic fixture data only."
+        },
+        "Sensitivity": "Normal",
+        "Importance": "Normal",
+        "ReminderIsSet": false,
+        "IsAllDayEvent": false,
+        "Start": "2026-07-20T08:00:00.000",
+        "End": "2026-07-20T08:45:00.000",
+        "FreeBusyType": "Busy",
+        "RequiredAttendees": [
+          {
+            "__type": "AttendeeType:#Exchange",
+            "Mailbox": {
+              "Name": "alice@example.invalid",
+              "EmailAddress": "alice@example.invalid",
+              "RoutingType": "SMTP",
+              "MailboxType": "Mailbox"
+            }
+          }
+        ],
+        "OptionalAttendees": [
+          {
+            "__type": "AttendeeType:#Exchange",
+            "Mailbox": {
+              "Name": "bob@example.invalid",
+              "EmailAddress": "bob@example.invalid",
+              "RoutingType": "SMTP",
+              "MailboxType": "Mailbox"
+            }
+          }
+        ],
+        "Location": {
+          "__type": "EnhancedLocation:#Exchange",
+          "DisplayName": "Room Example",
+          "PostalAddress": {
+            "__type": "PersonaPostalAddress:#Exchange",
+            "Type": "Business",
+            "LocationSource": "None"
+          }
+        },
+        "StartTimeZone": {
+          "__type": "TimeZoneDefinitionType:#Exchange",
+          "Id": "UTC"
+        },
+        "EndTimeZone": {
+          "__type": "TimeZoneDefinitionType:#Exchange",
+          "Id": "UTC"
+        },
+        "IsOnlineMeeting": true,
+        "OnlineMeetingProvider": "TeamsForBusiness"
+      }
+    ],
+    "SavedItemFolderId": {
+      "__type": "TargetFolderId:#Exchange",
+      "BaseFolderId": {
+        "__type": "DistinguishedFolderId:#Exchange",
+        "Id": "calendar"
+      }
+    },
+    "SendMeetingInvitations": "SendToAllAndSaveCopy"
+  }
+}

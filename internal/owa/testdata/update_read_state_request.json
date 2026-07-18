@@ -1,0 +1,44 @@
+{
+  "__type": "UpdateItemJsonRequest:#Exchange",
+  "Header": {
+    "__type": "JsonRequestHeaders:#Exchange",
+    "RequestServerVersion": "Exchange2013",
+    "TimeZoneContext": {
+      "__type": "TimeZoneContext:#Exchange",
+      "TimeZoneDefinition": {
+        "__type": "TimeZoneDefinitionType:#Exchange",
+        "Id": "UTC"
+      }
+    }
+  },
+  "Body": {
+    "__type": "UpdateItemRequest:#Exchange",
+    "ConflictResolution": "NeverOverwrite",
+    "ItemChanges": [
+      {
+        "__type": "ItemChange:#Exchange",
+        "ItemId": {
+          "__type": "ItemId:#Exchange",
+          "Id": "synthetic-message-1",
+          "ChangeKey": "synthetic-change-1"
+        },
+        "Updates": [
+          {
+            "__type": "SetItemField:#Exchange",
+            "Item": {
+              "__type": "Message:#Exchange",
+              "IsRead": false
+            },
+            "Path": {
+              "__type": "PropertyUri:#Exchange",
+              "FieldURI": "message:IsRead"
+            }
+          }
+        ]
+      }
+    ],
+    "MessageDisposition": "SaveOnly",
+    "SendCalendarInvitationsOrCancellations": "SendToNone",
+    "SuppressReadReceipts": true
+  }
+}

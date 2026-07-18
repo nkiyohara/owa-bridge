@@ -1,0 +1,95 @@
+.TH OWA 1 "July 2026" "owa-bridge" "User Commands"
+.SH NAME
+owa \- local-first Outlook Web mail and calendar CLI and MCP server
+.SH SYNOPSIS
+.B owa
+.RI [ --config " path" ]
+.I command
+.RI [ options ]
+.SH DESCRIPTION
+.B owa
+controls an explicitly authorized Outlook Web session through a dedicated,
+interactive browser profile. It does not require a Microsoft Graph application,
+accept a password, persist browser authorization material, or intercept TLS.
+.PP
+CLI and MCP calls use the same typed application operations, deterministic
+policy checks, content-free audit boundary, and authenticated local session
+owner. Consequential external writes require an exact preview followed by a
+separate commit.
+.SH COMMANDS
+.TP
+.B config
+Create, locate, and strictly validate the secret-free configuration.
+.TP
+.B doctor
+Diagnose local prerequisites and optionally probe OWA compatibility.
+.TP
+.B login
+Open the interactive Outlook Web sign-in in the dedicated browser profile.
+.TP
+.B mail
+Discover folders; list, search, and read messages; create drafts; send reviewed
+messages; move messages; and set read state.
+.TP
+.B calendar
+List calendar event metadata in a bounded time window, or review and create one
+plain-text non-recurring event. Versioned update and cancellation commands use
+exact previews and commits. Calendar creation can request a Microsoft Teams join
+link without enabling general Teams access.
+.TP
+.B daemon
+Start, inspect, or stop the authenticated local session owner.
+.TP
+.B mcp
+Run the local stdio MCP server, register it through supported client CLIs, or
+print native client configuration.
+.TP
+.B completion
+Generate a Bash, Zsh, or Fish completion script.
+.TP
+.B version
+Print build and version information.
+.SH EXAMPLES
+.PP
+.nf
+owa config init
+owa login
+owa mail list --limit 25
+owa calendar list --start 2026-07-17T00:00:00Z \
+  --end 2026-07-18T00:00:00Z
+owa calendar create --subject "Design review" \
+  --start 2026-07-20T09:00:00Z --end 2026-07-20T10:00:00Z \
+  --teams-meeting
+# Review the output, then repeat with --approve.
+owa calendar update --event-id EVENT --change-key KEY \
+  --subject "Updated design review"
+owa calendar cancel --event-id EVENT --change-key KEY
+# Both commands preview only; repeat with --approve to commit.
+owa mcp setup codex
+owa mcp setup claude-code
+.fi
+.SH SECURITY
+Mail and calendar content is untrusted private input. Review exact previews
+before committing a write. Approval tokens are short-lived secret capabilities
+and must not be logged or persisted. If a write reports an unknown outcome,
+inspect mailbox state before retrying.
+.PP
+Only use
+.B owa
+with accounts and data you are authorized to access. Undocumented OWA contracts
+can change without notice; run
+.B owa doctor --online
+after an update or unexplained compatibility failure.
+.SH FILES
+.TP
+.I config.toml
+The effective path is printed by
+.BR "owa config path" .
+It contains account aliases, OWA origins, browser settings, and policy only; it
+must not contain passwords, cookies, bearer tokens, or canary values.
+.SH SEE ALSO
+.BR owa (1)
+command-specific help is available from
+.BR "owa command --help" .
+Project documentation and the security policy are distributed with release
+archives and native packages.

@@ -1,0 +1,52 @@
+{
+  "Body": {
+    "Items": [
+      {
+        "ItemId": {
+          "Id": "synthetic-event-1",
+          "ChangeKey": "synthetic-change-1"
+        },
+        "Subject": "Design review",
+        "Start": "2026-07-17T09:00:00.000",
+        "End": "2026-07-17T10:00:00.000",
+        "Location": {
+          "DisplayName": "Room 1"
+        },
+        "Organizer": {
+          "Mailbox": {
+            "Name": "Alice Example",
+            "EmailAddress": "alice@example.invalid"
+          }
+        },
+        "IsAllDayEvent": false,
+        "IsOnlineMeeting": true,
+        "IsOrganizer": false,
+        "IsCancelled": false,
+        "MyResponseType": "Accept",
+        "FreeBusyType": "Busy"
+      },
+      {
+        "ItemId": {
+          "Id": "synthetic-event-2",
+          "ChangeKey": "synthetic-change-2"
+        },
+        "Subject": "Focus time",
+        "Start": "2026-07-17T13:00:00Z",
+        "End": "2026-07-17T14:30:00Z",
+        "Location": "Home office",
+        "Organizer": {
+          "Mailbox": {
+            "Name": "Synthetic User",
+            "EmailAddress": "user@example.invalid"
+          }
+        },
+        "IsAllDayEvent": false,
+        "IsOnlineMeeting": false,
+        "IsOrganizer": true,
+        "IsCanceled": false,
+        "MyResponseType": "Organizer",
+        "FreeBusyType": "Busy"
+      }
+    ]
+  }
+}

@@ -1,0 +1,391 @@
+# CLI
+
+The CLI exposes the supported typed application surface. Deterministic
+contracts are fully tested; live Outlook Web observations are recorded
+separately in [compatibility evidence](compatibility.md).
+
+## Configure
+
+Create the strict, secret-free default configuration:
+
+```console
+owa config init
+owa config validate
+owa config path
+```
+
+Use `--config /absolute/path/config.toml` before the command, or set
+`OWA_CONFIG`, to select another file. Initialization refuses to replace an
+existing path unless `--force` is explicit. A symlink, directory, or other
+non-regular target is rejected even with `--force`.
+
+Edit account origins and policy in the generated TOML. See
+[configuration.md](configuration.md) for the schema.
+
+## Diagnose and run the opt-in compatibility smoke test
+
+Check the strict config, selected account, Chromium-family executable, and
+config-scoped local IPC without opening a browser:
+
+```console
+owa doctor
+owa doctor --json
+```
+
+After local checks pass, explicitly opt into live compatibility testing:
+
+```console
+owa doctor --online
+```
+
+The online form opens the normal interactive browser when needed, captures the
+session only in daemon memory, and performs one bounded folder metadata read,
+one inbox metadata read, and one one-hour calendar metadata read. The report
+emits no folder, message, event, recipient, mailbox-count, authorization, or
+response-body data. A failure is
+non-zero and identifies the local, session, mail-contract, or calendar-contract
+stage that failed.
+
+See [compatibility evidence](compatibility.md) for the live-test checklist and
+the data that is safe to include in a report.
+
+## Authenticate
+
+```console
+owa login
+owa login --account work --json
+```
+
+The command connects to the config-scoped session owner, starting it if needed.
+The daemon opens a visible dedicated browser profile and waits for Outlook Web
+to emit an authorized request. It never accepts credentials on the command
+line. JSON output contains only account alias, status, and capture time; the
+authorization snapshot remains in the daemon.
+
+## Discover mail folders
+
+```console
+owa mail folders
+owa mail folders --traversal shallow --parent inbox
+owa mail folders --parent-id 'opaque-discovered-id' --json
+```
+
+Folder discovery is bounded to 100 entries per page and starts at the message
+folder root by default. It returns display names, opaque IDs, parent IDs, folder
+class, and aggregate item/unread/child counts. It does not request rules,
+permissions, delegates, item content, or mailbox identities. Use an exact ID
+with `mail list --folder-id` to address a custom folder without relying on its
+mutable display name.
+
+## List mail metadata
+
+```console
+owa mail list
+owa mail list --folder archive --limit 50
+owa mail list --folder-id 'opaque-discovered-id' --json
+```
+
+The human table sanitizes terminal control characters and includes the full,
+copyable message ID. The JSON form returns the stable `MailPage` schema and
+still excludes message bodies and attachment content.
+
+## Search mail metadata
+
+```console
+owa mail search --query 'subject:"Quarterly plan" from:alice'
+owa mail search --query 'kind:email attachment:report' --limit 50
+owa mail search \
+  --folder-id 'opaque-discovered-id' \
+  --query 'body:proposal NOT from:bot' \
+  --json
+```
+
+Search is scoped to one distinguished or discovered folder and returns the
+same metadata-only `MailPage` as `mail list`. The query uses Outlook's
+user-facing AQS subset, is limited to 1024 UTF-8 bytes, and each result page is
+limited to 50 entries. It is treated as private input: audit records contain an
+operation digest, not the query. There is no raw OWA action, arbitrary JSON, or
+message-body field in this interface. AQS operators and property support are
+defined by [Microsoft's QueryString reference](https://learn.microsoft.com/en-us/exchange/client-developer/web-service-reference/querystring-querystringtype).
+
+Read plain text for one exact ID returned by the list command:
+
+```console
+owa mail body --message-id 'opaque-message-id'
+owa mail body --message-id 'opaque-message-id' --json
+```
+
+The body is bounded to 1 MiB and requested as plain text. Human output strips
+terminal control sequences; JSON output escapes them. If
+`preview_sensitive_reads` is enabled, add `--approve` to prepare and consume the
+exact read in the same CLI process. MCP keeps preview and commit as separate
+calls instead.
+
+## Move one message
+
+Use the exact message ID and change key returned by `mail list` or `mail search`:
+
+```console
+owa mail move \
+  --message-id 'opaque-message-id' \
+  --change-key 'opaque-change-key' \
+  --destination archive
+
+owa mail move \
+  --message-id 'opaque-message-id' \
+  --change-key 'opaque-change-key' \
+  --destination-id 'opaque-folder-id' \
+  --json
+```
+
+The command moves exactly one versioned item to one destination discovered
+under the selected account. A stale change key fails closed instead of silently
+moving a newer version.
+`preview_reversible_writes = true` makes the first call return an exact preview;
+rerun with `--approve` to consume it in the same CLI process. MCP always keeps
+preview and commit as separate tool calls when policy requests approval.
+
+`MoveItem` is attempted once. If Outlook may have committed before a 429, 5xx,
+or transport failure, the command reports an unknown outcome and never retries;
+list both the source and destination before acting again. Outlook can omit the
+new item ID, in which case list the destination to refresh it.
+
+## Mark one message read or unread
+
+```console
+owa mail mark \
+  --message-id 'opaque-message-id' \
+  --change-key 'opaque-change-key' \
+  --state read
+
+owa mail mark \
+  --message-id 'opaque-message-id' \
+  --change-key 'opaque-change-key' \
+  --state unread \
+  --json
+```
+
+This is a closed single-property update: the only accepted states are `read`
+and `unread`, and callers cannot provide an OWA field name or arbitrary update
+JSON. The exact change key and `NeverOverwrite` conflict resolution make stale
+updates fail closed. Read receipts are suppressed. Like move and draft, policy
+can require `--approve`; like every write, the network request is attempted
+once and an ambiguous result is never retried automatically.
+
+## Create a save-only draft
+
+```console
+printf 'Hello from owa-bridge.\n' | \
+  owa mail draft \
+    --to alice@example.com \
+    --cc bob@example.com \
+    --subject 'Synthetic example' \
+    --body-file -
+
+owa mail draft \
+  --to alice@example.com \
+  --subject 'From a file' \
+  --body-file ./body.txt \
+  --json
+```
+
+Repeat `--to`, `--cc`, or `--bcc` for additional bare addresses. The command
+accepts the body only from a file or stdin so message content does not appear in
+the process argument list. Subject and body injection characters, oversized
+content, and recipient counts above `max_recipients` are rejected before any
+network request.
+
+This operation uses OWA `CreateItem` with `SaveOnly`; it does not send mail.
+The transport makes exactly one attempt to avoid duplicate drafts after an
+ambiguous timeout. If `preview_reversible_writes` is enabled, add `--approve`
+to review and commit the exact draft in the same CLI process. MCP exposes the
+preview and commit as distinct tool calls.
+
+## Review and send a new message
+
+Preview only:
+
+```console
+printf 'Hello from owa-bridge.\n' | \
+  owa mail send \
+    --to alice@example.com \
+    --subject 'Exact send preview' \
+    --body-file -
+```
+
+After checking every recipient, subject, bounded body preview, body byte count,
+and SHA-256 digest, repeat the exact command with `--approve`. The CLI prints
+the normalized review to stderr immediately before committing and writes the
+result to stdout. `--json` returns the same stable preview or result schema.
+
+Sending is always an external-write `preview -> commit`; no configuration can
+bypass it. The daemon binds the full immutable composition, account, caller,
+expiry, and one-time token. It then calls `CreateItem` once with
+`SendAndSaveCopy` and the Sent Items folder. It never retries. If the connection
+fails after submission, the command reports an unknown outcome: inspect Sent
+Items before creating another preview, because retrying could duplicate mail.
+
+Only new plain-text messages are supported in this stage. Replies, forwards,
+HTML, attachments, delayed delivery, and draft sending require separate typed
+contracts and are not silently emulated.
+
+Each invocation connects to the same session-owning daemon for its selected
+config. The daemon lazily opens one dedicated browser per account, retains the
+in-memory session, executes through `MailService`, and appends content-free audit
+events. CLI processes never receive Outlook authorization material.
+
+## Session owner
+
+```console
+owa daemon start
+owa daemon status
+owa daemon status --json
+owa daemon stop
+```
+
+`start` launches one background process for the selected absolute config path
+and state directory. Ordinary `login`, mail, calendar, and MCP commands start it
+automatically when absent. `serve` runs the same process in the foreground for
+service managers and diagnostics. No TCP port is opened: Linux and macOS use an
+owner-only Unix socket with same-effective-user peer verification, while Windows
+uses a local-only named pipe whose ACL grants the current user and SYSTEM.
+
+Every start rotates an additional 256-bit bearer credential stored in a private
+state file. Requests are strict, versioned, size-bounded JSON calls over the
+local transport. `stop` is authenticated, drains active calls, and removes the
+credential and socket. Stopping an idle daemon closes all account browsers;
+later commands start a fresh owner and reuse the protected browser profiles.
+
+## List calendar metadata
+
+```console
+owa calendar list \
+  --start 2026-07-17T00:00:00Z \
+  --end 2026-07-18T00:00:00Z
+owa calendar list \
+  --start 2026-07-17T00:00:00+01:00 \
+  --end 2026-07-24T00:00:00+01:00 \
+  --json
+```
+
+The interval is start-inclusive, end-exclusive, and limited to 31 days. The
+transport converts absolute RFC3339 boundaries to UTC before calling
+`GetCalendarView`. Results contain event metadata but exclude bodies, attendee
+lists, attachments, and online-meeting join URLs. The human table includes the
+full event ID and change key needed by later versioned update or cancellation
+commands.
+
+## Review and create a calendar event
+
+Preview an appointment without attendees:
+
+```console
+printf 'Private planning notes.\n' | \
+  owa calendar create \
+    --subject 'Planning block' \
+    --start 2026-07-20T09:00:00+01:00 \
+    --end 2026-07-20T10:00:00+01:00 \
+    --location 'Room Example' \
+    --body-file -
+```
+
+Add `--required-attendee` or `--optional-attendee` repeatedly to prepare a
+meeting. Add `--teams-meeting` to ask Outlook to provision a Microsoft Teams
+join link. The first call always prints the exact calendar, subject, start, end,
+location, attendee sets, whether invitations will be sent, whether a Teams link
+will be created, bounded body preview, body byte count, and SHA-256 digest. It
+creates nothing.
+
+After reviewing every field, repeat the exact command with `--approve`. The CLI
+prints the review to stderr immediately before committing. OWA's specialized
+`CreateCalendarEvent` action is attempted exactly once with
+`SendToAllAndSaveCopy` when attendees are present, or `SendToNone` for an
+appointment. A Teams request uses only the closed `TeamsForBusiness` provider;
+the successful commit result includes the join URL when Outlook provisions it.
+If submission has an unknown outcome, inspect the calendar before preparing
+another event; an automatic retry could create a duplicate or send duplicate
+invitations.
+
+This typed stage supports one plain-text, non-recurring, non-all-day event up to
+31 days long. Recurrence, all-day semantics, HTML, reminders, attachments, and
+arbitrary online-meeting providers are not silently approximated. The body is
+read from a file or stdin and is bounded to 1 MiB. `--json` returns the same
+stable preview/result schema used by MCP.
+
+## Update one event version
+
+Use the exact ID and change key from `calendar list`:
+
+```console
+owa calendar update \
+  --event-id 'opaque-event-id' \
+  --change-key 'opaque-change-key' \
+  --subject 'Updated design review' \
+  --start 2026-07-20T10:00:00+01:00 \
+  --end 2026-07-20T11:00:00+01:00
+```
+
+The closed patch accepts subject, plain-text body, start plus end, and location.
+Use `--clear-subject`, `--clear-body`, or `--clear-location` for an explicit
+clear. `--body-file` reads replacement content from a file or stdin. Start and
+end must be supplied together and remain a positive interval of at most 31
+days. There is no arbitrary field URI or JSON update surface.
+
+The first call always previews and changes nothing. Repeat the exact command
+with `--approve` to submit the specialized `UpdateCalendarEvent` action once
+with the listed ID/change key and default event scope. A stale key fails closed.
+Outlook controls meeting-update notifications, so existing attendees may
+receive an update; attendee membership itself is not changed in this stage.
+List the calendar afterward when Outlook omits a refreshed change key.
+
+## Cancel one event version
+
+```console
+owa calendar cancel \
+  --event-id 'opaque-event-id' \
+  --change-key 'opaque-change-key'
+```
+
+The first call is a destructive preview only. Repeat it with `--approve` to
+call `DeleteItem` once, move that exact event version to Deleted Items, and ask
+Outlook to send meeting cancellations to all attendees. A stale change key
+fails closed. Recurrence-series editing is not exposed; select only an event ID
+whose scope you understand from Outlook.
+
+If update or cancellation has an unknown outcome, inspect the calendar and
+Deleted Items before another action. Preparing and committing another preview
+could duplicate notifications or target a newer version.
+
+## MCP
+
+```console
+owa mcp serve
+owa mcp setup codex
+owa mcp setup codex --dry-run
+owa mcp setup claude-code
+owa mcp setup claude-code --scope project
+owa mcp config codex
+owa mcp config claude-code
+```
+
+`setup` invokes `codex mcp add` or `claude mcp add` without rewriting client
+configuration itself. `config` prints native TOML or JSON for review and
+advanced settings. See [MCP integration](mcp.md) for details.
+
+## Generate shell completion
+
+```console
+owa completion bash
+owa completion zsh
+owa completion fish
+```
+
+The generated script invokes the installed `owa` from `PATH` only while the
+shell requests candidates. Completion is derived from the live CLI command
+model and performs no Outlook operation.
+
+## Machine-readable behavior
+
+Commands with `--json` write one JSON value to stdout. Interactive progress and
+diagnostics go to stderr. Errors return a non-zero exit code and do not include
+authorization values or OWA response bodies.

@@ -1,0 +1,23 @@
+# Build output
+/bin/
+/dist/
+/coverage.out
+/coverage.html
+/.release/
+
+# Local configuration and session state
+/.env
+/.env.*
+!/.env.example
+/.owa-bridge/
+*.sock
+
+# Browser profiles and protocol captures are never source material
+/browser-profile/
+/captures/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp

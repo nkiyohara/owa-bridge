@@ -1,0 +1,161 @@
+// Package config loads strict, secret-free application configuration.
+package config
+
+import (
+	"errors"
+	"fmt"
+	"net/url"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/nkiyohara/owa-bridge/internal/domain"
+	"github.com/nkiyohara/owa-bridge/internal/policy"
+)
+
+const CurrentVersion = 1
+
+// Config is the complete persisted configuration. It intentionally has no
+// credential, cookie, token, canary, or password field.
+type Config struct {
+	Version        int                `toml:"version"`
+	DefaultAccount string             `toml:"default_account"`
+	Accounts       map[string]Account `toml:"accounts"`
+	Policy         Policy             `toml:"policy"`
+	Browser        Browser            `toml:"browser"`
+}
+
+// Account identifies one Outlook Web origin by a non-personal local alias.
+type Account struct {
+	Origin string `toml:"origin"`
+}
+
+// Policy maps persisted settings into the deterministic policy core.
+type Policy struct {
+	Mode                    policy.Mode `toml:"mode"`
+	PreviewSensitiveReads   bool        `toml:"preview_sensitive_reads"`
+	PreviewReversibleWrites bool        `toml:"preview_reversible_writes"`
+	MaxRecipients           int         `toml:"max_recipients"`
+	MaxAttendees            int         `toml:"max_attendees"`
+}
+
+// Browser controls the dedicated interactive browser process.
+type Browser struct {
+	Executable   string   `toml:"executable,omitempty"`
+	LoginTimeout Duration `toml:"login_timeout"`
+}
+
+// Duration encodes a human-readable Go duration such as "5m" in TOML.
+type Duration time.Duration
+
+// MarshalText implements encoding.TextMarshaler.
+func (duration Duration) MarshalText() ([]byte, error) {
+	return []byte(time.Duration(duration).String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (duration *Duration) UnmarshalText(text []byte) error {
+	parsed, err := time.ParseDuration(string(text))
+	if err != nil {
+		return fmt.Errorf("parse duration: %w", err)
+	}
+	*duration = Duration(parsed)
+	return nil
+}
+
+// Default returns a safe, immediately valid configuration.
+func Default() Config {
+	return Config{
+		Version:        CurrentVersion,
+		DefaultAccount: "work",
+		Accounts: map[string]Account{
+			"work": {Origin: "https://outlook.cloud.microsoft"},
+		},
+		Policy: Policy{
+			Mode:          policy.ModeGuarded,
+			MaxRecipients: 20,
+			MaxAttendees:  50,
+		},
+		Browser: Browser{LoginTimeout: Duration(5 * time.Minute)},
+	}
+}
+
+// Validate rejects ambiguous, unsafe, or unsupported configuration.
+func (configuration Config) Validate() error {
+	if configuration.Version != CurrentVersion {
+		return fmt.Errorf("unsupported config version %d", configuration.Version)
+	}
+	if len(configuration.Accounts) == 0 {
+		return errors.New("at least one account is required")
+	}
+	if len(configuration.Accounts) > 32 {
+		return errors.New("at most 32 accounts are supported")
+	}
+	if _, exists := configuration.Accounts[configuration.DefaultAccount]; !exists {
+		return fmt.Errorf("default account %q is not configured", configuration.DefaultAccount)
+	}
+
+	aliases := make([]string, 0, len(configuration.Accounts))
+	for alias := range configuration.Accounts {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+	for _, alias := range aliases {
+		if err := domain.AccountID(alias).Validate(); err != nil {
+			return fmt.Errorf("validate account alias %q: %w", alias, err)
+		}
+		if err := validateOrigin(configuration.Accounts[alias].Origin); err != nil {
+			return fmt.Errorf("validate account %q: %w", alias, err)
+		}
+	}
+
+	if err := configuration.Policy.Rules().Validate(); err != nil {
+		return fmt.Errorf("validate policy: %w", err)
+	}
+	if configuration.Policy.MaxRecipients < 1 || configuration.Policy.MaxRecipients > 500 {
+		return errors.New("max_recipients must be between 1 and 500")
+	}
+	if configuration.Policy.MaxAttendees < 1 || configuration.Policy.MaxAttendees > 1000 {
+		return errors.New("max_attendees must be between 1 and 1000")
+	}
+	loginTimeout := time.Duration(configuration.Browser.LoginTimeout)
+	if loginTimeout < time.Minute || loginTimeout > 30*time.Minute {
+		return errors.New("login_timeout must be between 1 minute and 30 minutes")
+	}
+	if strings.ContainsAny(configuration.Browser.Executable, "\r\n\x00") {
+		return errors.New("browser executable contains a forbidden character")
+	}
+	return nil
+}
+
+// Rules converts persisted policy without giving adapters a second policy path.
+func (configuration Policy) Rules() policy.Rules {
+	return policy.Rules{
+		Mode:                    configuration.Mode,
+		PreviewSensitiveReads:   configuration.PreviewSensitiveReads,
+		PreviewReversibleWrites: configuration.PreviewReversibleWrites,
+	}
+}
+
+func validateOrigin(raw string) error {
+	origin, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("parse origin: %w", err)
+	}
+	if origin.Scheme != "https" {
+		return errors.New("origin must use https")
+	}
+	if origin.Hostname() == "" {
+		return errors.New("origin must include a hostname")
+	}
+	if origin.User != nil {
+		return errors.New("origin must not include user information")
+	}
+	if origin.RawQuery != "" || origin.Fragment != "" {
+		return errors.New("origin must not include a query or fragment")
+	}
+	if origin.Path != "" && origin.Path != "/" {
+		return errors.New("origin must not include a path")
+	}
+	return nil
+}

@@ -1,0 +1,17 @@
+[tools]
+go = "1.26.5"
+task = "3.52.0"
+golangci-lint = "2.12.2"
+markdownlint-cli2 = "0.23.1"
+actionlint = "1.7.12"
+zizmor = "1.27.0"
+goreleaser = "2.17.0"
+cosign = "3.1.1"
+syft = "1.48.0"
+gitleaks = "8.30.1"
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.6.0"
+"go:github.com/google/go-licenses/v2" = "2.0.1"
+
+[settings]
+experimental = true
+lockfile = true

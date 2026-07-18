@@ -1,0 +1,12 @@
+{
+  "Body": {
+    "ResponseMessages": {
+      "Items": [
+        {
+          "ResponseClass": "Success",
+          "ResponseCode": "NoError"
+        }
+      ]
+    }
+  }
+}

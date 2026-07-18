@@ -1,0 +1,20 @@
+{
+  "Body": {
+    "ResponseMessages": {
+      "Items": [
+        {
+          "ResponseClass": "Success",
+          "ResponseCode": "NoError",
+          "Items": [
+            {
+              "ItemId": {
+                "Id": "synthetic-moved-message-1",
+                "ChangeKey": "synthetic-change-2"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

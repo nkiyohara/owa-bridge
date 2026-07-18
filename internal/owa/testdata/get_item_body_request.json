@@ -1,0 +1,34 @@
+{
+  "__type": "GetItemJsonRequest:#Exchange",
+  "Header": {
+    "__type": "JsonRequestHeaders:#Exchange",
+    "RequestServerVersion": "Exchange2013",
+    "TimeZoneContext": {
+      "__type": "TimeZoneContext:#Exchange",
+      "TimeZoneDefinition": {
+        "__type": "TimeZoneDefinitionType:#Exchange",
+        "Id": "UTC"
+      }
+    }
+  },
+  "Body": {
+    "__type": "GetItemRequest:#Exchange",
+    "ItemShape": {
+      "__type": "ItemResponseShape:#Exchange",
+      "BaseShape": "IdOnly",
+      "BodyType": "Text",
+      "AdditionalProperties": [
+        {
+          "__type": "PropertyUri:#Exchange",
+          "FieldURI": "item:Body"
+        }
+      ]
+    },
+    "ItemIds": [
+      {
+        "__type": "ItemId:#Exchange",
+        "Id": "synthetic-message-1"
+      }
+    ]
+  }
+}

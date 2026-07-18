@@ -1,0 +1,124 @@
+{
+  "__type": "UpdateCalendarEventJsonRequest:#Exchange",
+  "Header": {
+    "__type": "JsonRequestHeaders:#Exchange",
+    "RequestServerVersion": "Exchange2013",
+    "TimeZoneContext": {
+      "__type": "TimeZoneContext:#Exchange",
+      "TimeZoneDefinition": {
+        "__type": "TimeZoneDefinitionType:#Exchange",
+        "Id": "UTC"
+      }
+    }
+  },
+  "Body": {
+    "__type": "UpdateCalendarEventRequest:#Exchange",
+    "EventId": {
+      "__type": "ItemId:#Exchange",
+      "Id": "synthetic-event-1",
+      "ChangeKey": "synthetic-change-1"
+    },
+    "ItemChange": {
+      "__type": "ItemChange:#Exchange",
+      "Updates": [
+        {
+          "__type": "SetItemField:#Exchange",
+          "Item": {
+            "__type": "CalendarItem:#Exchange",
+            "Subject": "Updated synthetic event"
+          },
+          "Path": {
+            "__type": "PropertyUri:#Exchange",
+            "FieldURI": "Subject"
+          }
+        },
+        {
+          "__type": "SetItemField:#Exchange",
+          "Item": {
+            "__type": "CalendarItem:#Exchange",
+            "Body": {
+              "__type": "BodyContentType:#Exchange",
+              "BodyType": "Text",
+              "Value": "Updated fixture body."
+            }
+          },
+          "Path": {
+            "__type": "PropertyUri:#Exchange",
+            "FieldURI": "Body"
+          }
+        },
+        {
+          "__type": "SetItemField:#Exchange",
+          "Item": {
+            "__type": "CalendarItem:#Exchange",
+            "Start": "2026-07-20T08:00:00.000"
+          },
+          "Path": {
+            "__type": "PropertyUri:#Exchange",
+            "FieldURI": "Start"
+          }
+        },
+        {
+          "__type": "SetItemField:#Exchange",
+          "Item": {
+            "__type": "CalendarItem:#Exchange",
+            "End": "2026-07-20T09:00:00.000"
+          },
+          "Path": {
+            "__type": "PropertyUri:#Exchange",
+            "FieldURI": "End"
+          }
+        },
+        {
+          "__type": "SetItemField:#Exchange",
+          "Item": {
+            "__type": "CalendarItem:#Exchange",
+            "StartTimeZoneId": "UTC"
+          },
+          "Path": {
+            "__type": "PropertyUri:#Exchange",
+            "FieldURI": "StartTimeZoneId"
+          }
+        },
+        {
+          "__type": "SetItemField:#Exchange",
+          "Item": {
+            "__type": "CalendarItem:#Exchange",
+            "EndTimeZoneId": "UTC"
+          },
+          "Path": {
+            "__type": "PropertyUri:#Exchange",
+            "FieldURI": "EndTimeZoneId"
+          }
+        },
+        {
+          "__type": "SetItemField:#Exchange",
+          "Item": {
+            "__type": "CalendarItem:#Exchange",
+            "Locations": [
+              {
+                "__type": "EnhancedLocation:#Exchange",
+                "DisplayName": "Room Updated",
+                "PostalAddress": {
+                  "__type": "PersonaPostalAddress:#Exchange",
+                  "Type": "Business",
+                  "LocationSource": "None"
+                }
+              }
+            ]
+          },
+          "Path": {
+            "__type": "PropertyUri:#Exchange",
+            "FieldURI": "Locations"
+          }
+        }
+      ],
+      "ItemId": {
+        "__type": "ItemId:#Exchange",
+        "Id": "synthetic-event-1",
+        "ChangeKey": "synthetic-change-1"
+      }
+    },
+    "EventScope": 0
+  }
+}

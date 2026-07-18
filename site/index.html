@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A local-first Outlook Web mail and calendar CLI and MCP server.">
+  <meta name="theme-color" content="#ffffff">
+  <meta property="og:title" content="owa-bridge">
+  <meta property="og:description" content="Outlook Web mail and calendar from your terminal or AI agent.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://nkiyohara.github.io/owa-bridge/">
+  <link rel="canonical" href="https://nkiyohara.github.io/owa-bridge/">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <title>owa-bridge — local-first Outlook Web CLI and MCP</title>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header>
+    <a class="wordmark" href="./">owa-bridge</a>
+    <nav aria-label="Primary navigation">
+      <a href="https://github.com/nkiyohara/owa-bridge/blob/main/docs/install.md">Docs</a>
+      <a href="https://github.com/nkiyohara/owa-bridge">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="intro">
+      <p class="label">Local-first Outlook Web tooling</p>
+      <h1>Mail and calendar,<br>from your terminal.</h1>
+      <p class="lede">
+        A CLI and MCP server that uses your interactive Outlook Web session.
+        No Microsoft Graph app, hosted relay, or password capture.
+      </p>
+      <p class="links">
+        <a class="primary" href="https://github.com/nkiyohara/owa-bridge/releases/latest">Download v0.1.0</a>
+        <a href="https://github.com/nkiyohara/owa-bridge/blob/main/README.md">Read the documentation</a>
+      </p>
+    </section>
+
+    <section id="quickstart" aria-labelledby="quickstart-title">
+      <h2 id="quickstart-title">Quickstart</h2>
+      <pre><code>owa config init
+owa config validate
+owa login
+owa doctor --online</code></pre>
+      <p class="note">
+        Download the archive for your platform and verify
+        <code>checksums.txt</code> before running these commands.
+      </p>
+    </section>
+
+    <section aria-labelledby="features-title">
+      <h2 id="features-title">What it does</h2>
+      <div class="features">
+        <div>
+          <h3>Mail</h3>
+          <p>List and search messages, read bodies, save drafts, send, move, and change read state.</p>
+        </div>
+        <div>
+          <h3>Calendar</h3>
+          <p>List, create, update, and cancel events with required or optional attendees.</p>
+        </div>
+        <div>
+          <h3>Teams links</h3>
+          <p>Create a reviewed Outlook calendar meeting with a Teams join link.</p>
+        </div>
+      </div>
+      <p><a href="https://github.com/nkiyohara/owa-bridge/blob/main/docs/features.md">See the feature matrix →</a></p>
+    </section>
+
+    <section id="agents" aria-labelledby="agents-title">
+      <h2 id="agents-title">For AI agents</h2>
+      <p>
+        Twenty narrow MCP tools expose the same typed operations and stable JSON
+        as the CLI. Consequential writes use an exact preview and commit flow.
+      </p>
+      <pre><code>owa mcp setup codex
+codex mcp get owa
+
+owa mcp setup claude-code
+claude mcp get owa</code></pre>
+      <p>
+        <a href="https://github.com/nkiyohara/owa-bridge/blob/main/docs/mcp.md">MCP guide</a>
+        <span aria-hidden="true"> · </span>
+        <a href="https://github.com/nkiyohara/owa-bridge/blob/main/docs/json.md">JSON contract</a>
+      </p>
+    </section>
+
+    <section aria-labelledby="safety-title">
+      <h2 id="safety-title">Safety by default</h2>
+      <ul>
+        <li>Authentication stays visible, interactive, and browser-owned.</li>
+        <li>Writes require a server-enforced preview and commit.</li>
+        <li>Versioned items use exact IDs and change keys.</li>
+        <li>Ambiguous writes fail closed instead of retrying automatically.</li>
+      </ul>
+      <p class="note">
+        General Teams access, Graph passthrough, hosted relays, unattended
+        login, tenant-wide access, and permanent delete are out of scope.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <span>Apache-2.0 · macOS, Linux, Windows</span>
+    <span>
+      <a href="https://github.com/nkiyohara/owa-bridge/blob/main/SECURITY.md">Security</a>
+      <span aria-hidden="true"> · </span>
+      <a href="https://github.com/nkiyohara/owa-bridge/issues">Issues</a>
+    </span>
+    <small>Independent project. Not affiliated with or endorsed by Microsoft.</small>
+  </footer>
+</body>
+</html>
