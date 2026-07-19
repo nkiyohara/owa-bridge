@@ -12,7 +12,7 @@ for environments where Microsoft Graph application access is unavailable.
 [JSON contract](docs/json.md)
 
 > [!WARNING]
-> `owa-bridge` 0.1 is an early release over undocumented Outlook Web contracts.
+> `owa-bridge` 0.2 is an early release over undocumented Outlook Web contracts.
 > Use only an account you are authorized to access, review every write, and
 > keep Outlook available for reconciliation after an unknown outcome.
 
