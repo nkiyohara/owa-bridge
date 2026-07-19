@@ -97,6 +97,60 @@ func (client *Client) Login(ctx context.Context, account domain.AccountID, calle
 	return result, nil
 }
 
+// TerminalLogin starts or advances a caller-bound text-only browser login.
+func (client *Client) TerminalLogin(
+	ctx context.Context,
+	input TerminalLoginInput,
+	caller domain.Caller,
+) (TerminalLoginResult, error) {
+	if err := input.validate(); err != nil {
+		return TerminalLoginResult{}, err
+	}
+	var result TerminalLoginResult
+	if err := client.call(ctx, MethodTerminalLogin, caller, input, &result); err != nil {
+		return TerminalLoginResult{}, err
+	}
+	if err := validateTerminalLoginResult(input, result); err != nil {
+		return TerminalLoginResult{}, err
+	}
+	return result, nil
+}
+
+func validateTerminalLoginResult(input TerminalLoginInput, result TerminalLoginResult) error {
+	if result.Account != input.Account {
+		return errors.New("daemon returned terminal login state for a different account")
+	}
+	switch result.Status {
+	case "pending":
+		if !terminalSessionIDPattern.MatchString(result.SessionID) || result.View == nil ||
+			!result.CapturedAt.IsZero() {
+			return errors.New("daemon returned invalid pending terminal login state")
+		}
+		if input.SessionID != "" && result.SessionID != input.SessionID {
+			return errors.New("daemon returned a different terminal login session")
+		}
+		for _, control := range result.View.Controls {
+			if !terminalControlIDPattern.MatchString(control.ID) ||
+				control.Kind != "input" && control.Kind != "activate" {
+				return errors.New("daemon returned an invalid terminal login control")
+			}
+		}
+		return nil
+	case "authenticated":
+		if result.CapturedAt.IsZero() || result.View != nil {
+			return errors.New("daemon returned invalid authenticated terminal login state")
+		}
+		return nil
+	case "cancelled":
+		if !result.CapturedAt.IsZero() || result.View != nil {
+			return errors.New("daemon returned invalid cancelled terminal login state")
+		}
+		return nil
+	default:
+		return errors.New("daemon returned an unknown terminal login status")
+	}
+}
+
 func (client *Client) ListMail(ctx context.Context, input application.MailListInput, caller domain.Caller) (application.MailPage, error) {
 	var result application.MailPage
 	return result, client.call(ctx, MethodMailList, caller, input, &result)

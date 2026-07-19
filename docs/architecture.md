@@ -75,13 +75,16 @@ added for advanced local deployments, but must bind to loopback, validate the
 
 ## Session lifecycle
 
-1. `owa login` launches a dedicated browser profile.
-2. The user completes the normal interactive sign-in flow.
+1. `owa login` launches a dedicated browser profile visibly by default;
+   `--terminal` explicitly selects a bounded text relay for an SSH TTY.
+2. The user completes the normal interactive sign-in flow in the browser or by
+   relaying controls and individual keys to its headless page.
 3. The session owner observes only the minimum first-party request metadata
    needed to execute Outlook Web operations.
 4. Short-lived authorization material remains in memory whenever possible.
 5. The browser profile is stored using Chromium's platform protections. The
    project never stores a username, password, or refresh token in its config.
+   The terminal relay never receives a complete form value.
 6. Expiry causes an explicit transition back to `needs_login`; it never falls
    back to credential automation.
 

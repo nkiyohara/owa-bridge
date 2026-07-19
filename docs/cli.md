@@ -54,12 +54,20 @@ the data that is safe to include in a report.
 ```console
 owa login
 owa login --account work --json
+owa login --account work --terminal
 ```
 
 The command connects to the config-scoped session owner, starting it if needed.
-The daemon opens a visible dedicated browser profile and waits for Outlook Web
-to emit an authorized request. It never accepts credentials on the command
-line. JSON output contains only account alias, status, and capture time; the
+The daemon normally opens a visible dedicated browser profile and waits for
+Outlook Web to emit an authorized request. `--terminal` instead launches that
+profile headlessly and renders a bounded, text-only control list for an
+interactive SSH TTY. It cannot be combined with `--json` or piped input.
+
+The terminal relay sends individual keys to the focused browser element and
+never accepts a password flag or complete form value. It handles ordinary DOM
+forms but may require visible login for CAPTCHA, passkeys, security keys,
+client certificates, native dialogs, or custom graphical controls. JSON output
+from normal login contains only account alias, status, and capture time; the
 authorization snapshot remains in the daemon.
 
 ## Discover mail folders

@@ -1,8 +1,9 @@
 # Interactive authentication
 
-`owa-bridge` never asks for a Microsoft username, password, MFA code, OAuth
-client secret, or tenant consent. Authentication belongs to the same visible
-browser flow the user already trusts for Outlook Web.
+`owa-bridge` never accepts a Microsoft username, password, MFA code, OAuth
+client secret, or tenant consent as a command argument, configuration value, or
+structured API field. Authentication belongs to a browser flow controlled by
+the user.
 
 Google Chrome, Chromium, and Microsoft Edge are supported. An explicit
 `browser.executable` is resolved exactly and never falls back to a different
@@ -13,9 +14,10 @@ reports a clear prerequisite failure through `owa doctor`.
 
 1. The local session owner creates a dedicated Chromium profile with owner-only
    permissions.
-2. It launches a visible browser at the configured HTTPS Outlook origin.
+2. It launches a visible browser at the configured HTTPS Outlook origin, or an
+   explicitly requested headless browser with a text-only terminal relay.
 3. The user completes SSO, MFA, Conditional Access, and any organization notice
-   directly in the browser.
+   through the browser or relay.
 4. A Chrome DevTools Protocol network observer watches only requests whose
    origin exactly matches the configured Outlook origin.
 5. When Outlook itself sends bearer authorization, the session owner retains a
@@ -38,6 +40,29 @@ owner's memory and have no JSON, text, or logging representation.
 The selected headers are limited to authorization and the OWA routing/session
 headers known to be needed by the protocol adapter. Cookies, request bodies,
 response bodies, and unrelated headers are not copied by the observer.
+
+## Text-only SSH login
+
+`owa login --terminal` is an experimental fallback for an interactive SSH TTY
+without a display server. The daemon launches the dedicated Chromium profile
+headlessly. The CLI displays a bounded list of visible page controls and sends
+one activation or key event at a time over owner-only authenticated IPC.
+
+```console
+owa login --terminal
+```
+
+Piped input and `--json` are rejected. Password fields are identified only so
+their keystrokes can remain hidden; the CLI does not collect a complete
+password or form value. Press Enter to send the browser's Enter key, Escape to
+return to the control list, `r` to refresh after an out-of-band approval, or
+`q` to cancel and close the headless browser.
+
+The relay supports ordinary DOM text fields, buttons, and links. CAPTCHA,
+passkeys, security keys, client certificates, native browser dialogs, and some
+custom controls may not have a safe text representation. Use visible login for
+those cases. The relay does not make an incompatible server or browser satisfy
+device-compliance Conditional Access policy.
 
 ## Origin policy
 

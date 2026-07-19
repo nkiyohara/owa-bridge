@@ -47,6 +47,9 @@ worst-case JSON escaping.
 Protocol version 7 adds versioned `calendar.update` and destructive
 `calendar.cancel` preview/commit calls without adding a generic mutation
 method.
+Protocol version 8 adds the optional caller-bound `login.terminal` state
+machine. Its path-free page projection and one-key actions remain on the same
+owner-only authenticated IPC and never expose authorization material.
 
 ## Consequences
 

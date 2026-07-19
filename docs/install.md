@@ -101,6 +101,11 @@ owa login
 owa doctor --online
 ```
 
+For an interactive SSH session without a display server, the experimental
+`owa login --terminal` command can relay ordinary text-based browser controls
+through the TTY. CAPTCHA, passkeys, security keys, client certificates, and
+native dialogs may still require visible login.
+
 ## Shell completion and manual
 
 Homebrew metadata and native deb, RPM, and APK packages install `owa(1)` plus

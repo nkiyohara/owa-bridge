@@ -64,7 +64,8 @@ Sigstore verification are in [docs/install.md](docs/install.md).
 owa config init
 # Set only the final HTTPS Outlook origin used after interactive sign-in.
 owa config validate
-owa login
+owa login                    # visible browser
+owa login --terminal         # experimental text-only SSH relay
 owa doctor --online
 ```
 

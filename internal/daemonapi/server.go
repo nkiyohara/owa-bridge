@@ -182,6 +182,19 @@ func (server *Server) dispatch(ctx context.Context, request requestEnvelope) (an
 			return nil, err
 		}
 		return server.backend.Login(ctx, input.Account, request.Caller)
+	case MethodTerminalLogin:
+		var input TerminalLoginInput
+		if err := decodeStrict(bytes.NewReader(request.Params), &input); err != nil {
+			return nil, err
+		}
+		if err := input.validate(); err != nil {
+			return nil, err
+		}
+		backend, supported := server.backend.(TerminalLoginBackend)
+		if !supported {
+			return nil, errors.New("terminal login is not supported by this session owner")
+		}
+		return backend.TerminalLogin(ctx, input, request.Caller)
 	case MethodMailList:
 		var input application.MailListInput
 		if err := decodeStrict(bytes.NewReader(request.Params), &input); err != nil {

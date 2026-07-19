@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"sync"
@@ -10,11 +12,13 @@ import (
 	"github.com/nkiyohara/owa-bridge/internal/application"
 	"github.com/nkiyohara/owa-bridge/internal/approval"
 	"github.com/nkiyohara/owa-bridge/internal/audit"
+	"github.com/nkiyohara/owa-bridge/internal/browser"
 	"github.com/nkiyohara/owa-bridge/internal/config"
 	"github.com/nkiyohara/owa-bridge/internal/daemonapi"
 	"github.com/nkiyohara/owa-bridge/internal/domain"
 	"github.com/nkiyohara/owa-bridge/internal/owa"
 	"github.com/nkiyohara/owa-bridge/internal/paths"
+	"github.com/nkiyohara/owa-bridge/internal/session"
 )
 
 type sessionAccount struct {
@@ -29,6 +33,15 @@ type sessionPreview struct {
 	expiresAt time.Time
 }
 
+type terminalLoginSession struct {
+	id       string
+	account  domain.AccountID
+	caller   domain.Caller
+	handle   terminalBrowserHandle
+	deadline time.Time
+	view     daemonapi.TerminalLoginView
+}
+
 // sessionBackend lazily opens one dedicated browser per configured account and
 // keeps it for the lifetime of its owning server. Every adapter call passes
 // through the same application guard and content-free audit recorder.
@@ -38,13 +51,18 @@ type sessionBackend struct {
 	guard         *application.Guard
 	recorder      *audit.FileRecorder
 
-	mu       sync.Mutex
-	accounts map[domain.AccountID]sessionAccount
-	previews map[string]sessionPreview
-	closed   bool
-	active   sync.WaitGroup
-	close    sync.Once
-	closeErr error
+	mu        sync.Mutex
+	accounts  map[domain.AccountID]sessionAccount
+	previews  map[string]sessionPreview
+	closed    bool
+	active    sync.WaitGroup
+	lifecycle context.Context
+	cancel    context.CancelFunc
+	close     sync.Once
+	closeErr  error
+
+	terminalSessions map[string]*terminalLoginSession
+	terminalAccounts map[domain.AccountID]string
 }
 
 func newSessionBackend(app *runtime) (*sessionBackend, error) {
@@ -70,13 +88,18 @@ func newSessionBackend(app *runtime) (*sessionBackend, error) {
 		_ = recorder.Close()
 		return nil, err
 	}
+	lifecycle, cancel := context.WithCancel(context.Background())
 	return &sessionBackend{
-		app:           app,
-		configuration: configuration,
-		guard:         guard,
-		recorder:      recorder,
-		accounts:      make(map[domain.AccountID]sessionAccount),
-		previews:      make(map[string]sessionPreview),
+		app:              app,
+		configuration:    configuration,
+		guard:            guard,
+		recorder:         recorder,
+		accounts:         make(map[domain.AccountID]sessionAccount),
+		previews:         make(map[string]sessionPreview),
+		lifecycle:        lifecycle,
+		cancel:           cancel,
+		terminalSessions: make(map[string]*terminalLoginSession),
+		terminalAccounts: make(map[domain.AccountID]string),
 	}, nil
 }
 
@@ -105,6 +128,202 @@ func (backend *sessionBackend) Login(
 	return daemonapi.LoginResult{
 		Account: accountID, Authenticated: true, CapturedAt: account.captured,
 	}, nil
+}
+
+func (backend *sessionBackend) TerminalLogin(
+	ctx context.Context,
+	input daemonapi.TerminalLoginInput,
+	caller domain.Caller,
+) (daemonapi.TerminalLoginResult, error) {
+	backend.mu.Lock()
+	if backend.closed {
+		backend.mu.Unlock()
+		return daemonapi.TerminalLoginResult{}, errors.New("session backend is closed")
+	}
+	backend.active.Add(1)
+	defer backend.active.Done()
+	defer backend.mu.Unlock()
+
+	if account, exists := backend.accounts[input.Account]; exists {
+		return authenticatedTerminalResult(input.Account, account.captured), nil
+	}
+
+	interaction, err := backend.terminalInteraction(input, caller)
+	if err != nil {
+		return daemonapi.TerminalLoginResult{}, err
+	}
+	if time.Now().After(interaction.deadline) {
+		closeErr := backend.dropTerminalInteraction(interaction, true)
+		return daemonapi.TerminalLoginResult{}, errors.Join(
+			errors.New("terminal login expired; start it again"), closeErr,
+		)
+	}
+	if input.Action != nil && input.Action.Type == "cancel" {
+		return daemonapi.TerminalLoginResult{
+			Account: input.Account, Status: "cancelled",
+		}, backend.dropTerminalInteraction(interaction, true)
+	}
+
+	if input.Action != nil && input.Action.Type != "refresh" {
+		action, err := terminalBrowserAction(*input.Action)
+		if err != nil {
+			return daemonapi.TerminalLoginResult{}, err
+		}
+		if err := interaction.handle.TerminalAct(ctx, action); err != nil {
+			return daemonapi.TerminalLoginResult{}, err
+		}
+	}
+
+	credentials, credentialsErr := interaction.handle.CurrentSession()
+	if credentialsErr == nil {
+		configured := backend.configuration.Accounts[string(input.Account)]
+		account, err := backend.accountFromHandle(configured, interaction.handle, credentials)
+		if err != nil {
+			return daemonapi.TerminalLoginResult{}, errors.Join(
+				err, backend.dropTerminalInteraction(interaction, true),
+			)
+		}
+		backend.accounts[input.Account] = account
+		_ = backend.dropTerminalInteraction(interaction, false)
+		return authenticatedTerminalResult(input.Account, account.captured), nil
+	}
+	if !errors.Is(credentialsErr, session.ErrNotReady) {
+		return daemonapi.TerminalLoginResult{}, credentialsErr
+	}
+
+	refreshView := input.Action == nil || input.Action.Type == "refresh" ||
+		input.Action.Type == "activate" || input.Action.Key == "enter"
+	if refreshView {
+		view, err := interaction.handle.TerminalSnapshot(ctx)
+		if err != nil {
+			return daemonapi.TerminalLoginResult{}, err
+		}
+		interaction.view = terminalLoginView(view)
+	}
+	view := interaction.view
+	return daemonapi.TerminalLoginResult{
+		Account: input.Account, SessionID: interaction.id, Status: "pending", View: &view,
+	}, nil
+}
+
+func (backend *sessionBackend) terminalInteraction(
+	input daemonapi.TerminalLoginInput,
+	caller domain.Caller,
+) (*terminalLoginSession, error) {
+	if input.SessionID != "" {
+		interaction, exists := backend.terminalSessions[input.SessionID]
+		if !exists || interaction.account != input.Account || interaction.caller != caller {
+			return nil, errors.New("invalid or expired terminal login session")
+		}
+		return interaction, nil
+	}
+	if existingID, exists := backend.terminalAccounts[input.Account]; exists {
+		interaction := backend.terminalSessions[existingID]
+		if interaction == nil || interaction.caller != caller {
+			return nil, errors.New("a terminal login is already active for this account")
+		}
+		return interaction, nil
+	}
+	configured, exists := backend.configuration.Accounts[string(input.Account)]
+	if !exists {
+		return nil, fmt.Errorf("account %q is not configured", input.Account)
+	}
+	profileDirectory, err := paths.ProfileDir(input.Account)
+	if err != nil {
+		return nil, err
+	}
+	handle, err := backend.app.launch(backend.lifecycle, browser.Options{
+		Origin: configured.Origin, ProfileDir: profileDirectory,
+		Executable: backend.configuration.Browser.Executable, Headless: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	terminalHandle, supported := handle.(terminalBrowserHandle)
+	if !supported {
+		return nil, errors.Join(
+			errors.New("configured browser launcher does not support terminal login"),
+			handle.Close(),
+		)
+	}
+	id, err := newTerminalLoginSessionID()
+	if err != nil {
+		return nil, errors.Join(err, handle.Close())
+	}
+	interaction := &terminalLoginSession{
+		id: id, account: input.Account, caller: caller, handle: terminalHandle,
+		deadline: time.Now().Add(time.Duration(backend.configuration.Browser.LoginTimeout)),
+	}
+	backend.terminalSessions[id] = interaction
+	backend.terminalAccounts[input.Account] = id
+	return interaction, nil
+}
+
+func (backend *sessionBackend) dropTerminalInteraction(
+	interaction *terminalLoginSession,
+	closeHandle bool,
+) error {
+	delete(backend.terminalSessions, interaction.id)
+	delete(backend.terminalAccounts, interaction.account)
+	if closeHandle {
+		return interaction.handle.Close()
+	}
+	return nil
+}
+
+func authenticatedTerminalResult(
+	account domain.AccountID,
+	capturedAt time.Time,
+) daemonapi.TerminalLoginResult {
+	return daemonapi.TerminalLoginResult{
+		Account: account, Status: "authenticated", CapturedAt: capturedAt,
+	}
+}
+
+func terminalLoginView(view browser.TerminalView) daemonapi.TerminalLoginView {
+	controls := make([]daemonapi.TerminalLoginControl, 0, len(view.Controls))
+	for _, control := range view.Controls {
+		controls = append(controls, daemonapi.TerminalLoginControl{
+			ID: control.ID, Kind: control.Kind, Name: control.Name,
+			Sensitive: control.Sensitive, Disabled: control.Disabled,
+		})
+	}
+	return daemonapi.TerminalLoginView{
+		Origin: view.Origin, Title: view.Title, Text: view.Text, Controls: controls,
+	}
+}
+
+func terminalBrowserAction(action daemonapi.TerminalLoginAction) (browser.TerminalAction, error) {
+	browserAction := browser.TerminalAction{ElementID: action.ControlID}
+	switch action.Type {
+	case "activate":
+		browserAction.Kind = browser.TerminalActivate
+	case "focus":
+		browserAction.Kind = browser.TerminalFocus
+	case "key":
+		browserAction.Kind = browser.TerminalKey
+		switch action.Key {
+		case "enter":
+			browserAction.Key = "Enter"
+		case "backspace":
+			browserAction.Key = "Backspace"
+		case "tab":
+			browserAction.Key = "Tab"
+		default:
+			browserAction.Key = action.Key
+		}
+	default:
+		return browser.TerminalAction{}, errors.New("unsupported terminal login action")
+	}
+	return browserAction, nil
+}
+
+func newTerminalLoginSessionID() (string, error) {
+	buffer := make([]byte, 24)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", fmt.Errorf("generate terminal login session ID: %w", err)
+	}
+	return "tls1_" + base64.RawURLEncoding.EncodeToString(buffer), nil
 }
 
 func (backend *sessionBackend) ListMail(
@@ -645,6 +864,9 @@ func (backend *sessionBackend) accountServices(
 	if account, exists := backend.accounts[accountID]; exists {
 		return account, nil
 	}
+	if _, exists := backend.terminalAccounts[accountID]; exists {
+		return sessionAccount{}, errors.New("terminal login is in progress for this account")
+	}
 	configured, exists := backend.configuration.Accounts[string(accountID)]
 	if !exists {
 		return sessionAccount{}, fmt.Errorf("account %q is not configured", accountID)
@@ -653,19 +875,32 @@ func (backend *sessionBackend) accountServices(
 	if err != nil {
 		return sessionAccount{}, err
 	}
+	services, err := backend.accountFromHandle(configured, handle, credentials)
+	if err != nil {
+		return sessionAccount{}, errors.Join(err, handle.Close())
+	}
+	backend.accounts[accountID] = services
+	return services, nil
+}
+
+func (backend *sessionBackend) accountFromHandle(
+	configured config.Account,
+	handle browserHandle,
+	credentials session.Credentials,
+) (sessionAccount, error) {
 	client, err := owa.NewClient(owa.Options{
 		Origin:     configured.Origin,
 		Authorizer: handle,
 		UserAgent:  "owa-bridge/" + backend.app.info.Version,
 	})
 	if err != nil {
-		return sessionAccount{}, errors.Join(err, handle.Close())
+		return sessionAccount{}, err
 	}
 	mail, err := application.NewMailService(backend.guard, client, application.MailOptions{
 		MaxRecipients: backend.configuration.Policy.MaxRecipients,
 	})
 	if err != nil {
-		return sessionAccount{}, errors.Join(err, handle.Close())
+		return sessionAccount{}, err
 	}
 	calendar, err := application.NewCalendarService(
 		backend.guard,
@@ -673,12 +908,11 @@ func (backend *sessionBackend) accountServices(
 		application.CalendarOptions{MaxAttendees: backend.configuration.Policy.MaxAttendees},
 	)
 	if err != nil {
-		return sessionAccount{}, errors.Join(err, handle.Close())
+		return sessionAccount{}, err
 	}
 	services := sessionAccount{
 		handle: handle, mail: mail, calendar: calendar, captured: credentials.CapturedAt(),
 	}
-	backend.accounts[accountID] = services
 	return services, nil
 }
 
@@ -686,14 +920,18 @@ func (backend *sessionBackend) Close() error {
 	backend.close.Do(func() {
 		backend.mu.Lock()
 		backend.closed = true
+		backend.cancel()
 		backend.mu.Unlock()
 		backend.active.Wait()
 
 		backend.mu.Lock()
 		defer backend.mu.Unlock()
-		closeErrors := make([]error, 0, len(backend.accounts)+1)
+		closeErrors := make([]error, 0, len(backend.accounts)+len(backend.terminalSessions)+1)
 		for _, account := range backend.accounts {
 			closeErrors = append(closeErrors, account.handle.Close())
+		}
+		for _, interaction := range backend.terminalSessions {
+			closeErrors = append(closeErrors, interaction.handle.Close())
 		}
 		closeErrors = append(closeErrors, backend.recorder.Close())
 		backend.closeErr = errors.Join(closeErrors...)
