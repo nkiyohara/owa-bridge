@@ -13,7 +13,7 @@ body:
     attributes:
       label: owa version
       description: Paste the version and commit from `owa version --json`.
-      placeholder: v0.1.0 / 0123456789abcdef
+      placeholder: v0.2.0 / 0123456789abcdef
     validations:
       required: true
 

@@ -1,6 +1,6 @@
 # Install and verify
 
-`owa-bridge` 0.1 is an early release over undocumented Outlook Web contracts.
+`owa-bridge` 0.2 is an early release over undocumented Outlook Web contracts.
 Use only an authorized account and review the
 [compatibility evidence](compatibility.md) before enabling writes.
 
@@ -24,7 +24,7 @@ third-party license material required by its linked dependencies.
 Use the release page in a browser or GitHub CLI. For example:
 
 ```console
-VERSION=v0.1.0
+VERSION=v0.2.0
 mkdir owa-release
 gh release download "$VERSION" \
   --repo nkiyohara/owa-bridge \
@@ -152,7 +152,7 @@ See [MCP integration](mcp.md) and
 ## Package catalogs
 
 GitHub release archives and Linux packages are the canonical install surface
-for 0.1. Release builds render Homebrew Cask, Scoop, and WinGet manifests from
+for 0.2. Release builds render Homebrew Cask, Scoop, and WinGet manifests from
 the same artifacts but do not publish them. Catalog publication requires
 separate repositories, review, and least-privilege automation; it will never
 silently rebuild an existing release.

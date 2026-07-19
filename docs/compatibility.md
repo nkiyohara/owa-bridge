@@ -12,6 +12,7 @@ mailbox observations.
 | --- | --- | --- | --- |
 | Config, policy, audit | Unit/race | macOS arm64, Chrome | Observed |
 | Local session owner | Unix/Windows contracts | macOS arm64 | Observed |
+| Text-only SSH login relay | Unit/IPC/browser projection contracts | Linux amd64, Chrome, sign-in shell | Partial |
 | Folder discovery, list/search/body | JSON contracts | Microsoft 365 work/school | Observed |
 | Single-message move | Preview/commit + JSON | Move and restore | Observed |
 | Single-message read/unread | Preview/commit + JSON | Read and restore unread | Observed |
@@ -26,10 +27,18 @@ mailbox observations.
 
 <!-- markdownlint-enable MD013 -->
 
-The live observations were made on 2026-07-18 with synthetic content and no
-third-party recipient. They show one authorized environment working; they are
-not a universal tenant or protocol support claim. `SECURITY.md` remains the
-source of truth for supported release versions.
+The live observations were made on 2026-07-18 and 2026-07-19 with synthetic
+content and no third-party recipient. They show one authorized environment
+working; they are not a universal tenant or protocol support claim.
+`SECURITY.md` remains the source of truth for supported release versions.
+
+On 2026-07-19, `owa login --terminal` launched headless Google Chrome on Linux
+amd64, rendered the Microsoft sign-in text and eight numbered controls, focused
+the email field, returned to the control list with Escape, and cancelled
+cleanly. No credential or MFA value was entered, so completion of
+authentication, Conditional Access, and OWA session capture remains
+unobserved. This is partial relay evidence, not an authentication compatibility
+claim.
 
 The distribution row means the verifier checked the complete artifact
 inventory, checksums, archive and package contents, both SBOM formats, generated
