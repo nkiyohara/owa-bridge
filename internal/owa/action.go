@@ -18,6 +18,9 @@ const (
 	UpdateCalendarEvent
 	MoveItem
 	DeleteItem
+	CreateAttachment
+	GetAttachment
+	SendItem
 )
 
 type actionSpec struct {
@@ -37,6 +40,9 @@ var actionSpecs = map[Action]actionSpec{
 	UpdateCalendarEvent:         {name: "UpdateCalendarEvent", effect: domain.EffectExternalWrite},
 	MoveItem:                    {name: "MoveItem", effect: domain.EffectReversibleWrite},
 	DeleteItem:                  {name: "DeleteItem", effect: domain.EffectDestructiveWrite},
+	CreateAttachment:            {name: "CreateAttachment", effect: domain.EffectExternalWrite},
+	GetAttachment:               {name: "GetAttachment", effect: domain.EffectSensitiveRead},
+	SendItem:                    {name: "SendItem", effect: domain.EffectExternalWrite},
 }
 
 // Name returns the protocol action name or an empty string for invalid values.

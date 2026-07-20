@@ -225,6 +225,18 @@ func (server *Server) dispatch(ctx context.Context, request requestEnvelope) (an
 			return nil, err
 		}
 		return server.backend.CommitMailBody(ctx, input.Token, request.Caller)
+	case MethodMailGetAttachment:
+		var input application.MailAttachmentInput
+		if err := decodeStrict(bytes.NewReader(request.Params), &input); err != nil {
+			return nil, err
+		}
+		return server.backend.GetMailAttachment(ctx, input, request.Caller)
+	case MethodMailCommitAttachment:
+		var input ApprovalInput
+		if err := decodeStrict(bytes.NewReader(request.Params), &input); err != nil {
+			return nil, err
+		}
+		return server.backend.CommitMailAttachment(ctx, input.Token, request.Caller)
 	case MethodMailCreateDraft:
 		var input application.MailDraftInput
 		if err := decodeStrict(bytes.NewReader(request.Params), &input); err != nil {
@@ -273,6 +285,18 @@ func (server *Server) dispatch(ctx context.Context, request requestEnvelope) (an
 			return nil, err
 		}
 		return server.backend.CommitMailReadState(ctx, input.Token, request.Caller)
+	case MethodMailDelete:
+		var input application.MailDeleteInput
+		if err := decodeStrict(bytes.NewReader(request.Params), &input); err != nil {
+			return nil, err
+		}
+		return server.backend.DeleteMail(ctx, input, request.Caller)
+	case MethodMailCommitDelete:
+		var input ApprovalInput
+		if err := decodeStrict(bytes.NewReader(request.Params), &input); err != nil {
+			return nil, err
+		}
+		return server.backend.CommitMailDelete(ctx, input.Token, request.Caller)
 	case MethodCalendarList:
 		var input application.CalendarListInput
 		if err := decodeStrict(bytes.NewReader(request.Params), &input); err != nil {

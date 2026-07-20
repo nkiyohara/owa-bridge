@@ -16,43 +16,77 @@ import (
 )
 
 const (
-	MaxCalendarAttendees     = 1000
-	MaxCalendarSubjectBytes  = 998
-	MaxCalendarBodyBytes     = 1 << 20
-	MaxCalendarLocationBytes = 4096
-	MaxCalendarEventDuration = 31 * 24 * time.Hour
-	calendarBodyPreviewRunes = 500
+	MaxCalendarAttendees       = 1000
+	MaxCalendarSubjectBytes    = 998
+	MaxCalendarBodyBytes       = 1 << 20
+	MaxCalendarLocationBytes   = 4096
+	MaxCalendarEventDuration   = 31 * 24 * time.Hour
+	MaxCalendarReminderMinutes = 28 * 24 * 60
+	MaxCalendarRecurrenceCount = 999
+	calendarBodyPreviewRunes   = 500
 )
 
-// CalendarCreateInput creates one non-recurring, non-all-day calendar item.
-// Required and optional attendees turn it into a meeting invitation.
+type CalendarReminder struct {
+	Enabled            bool `json:"enabled"`
+	MinutesBeforeStart int  `json:"minutesBeforeStart"`
+}
+
+type CalendarRecurrencePattern string
+
+const (
+	CalendarRecurrenceDaily           CalendarRecurrencePattern = "daily"
+	CalendarRecurrenceWeekly          CalendarRecurrencePattern = "weekly"
+	CalendarRecurrenceAbsoluteMonthly CalendarRecurrencePattern = "absolute_monthly"
+	CalendarRecurrenceAbsoluteYearly  CalendarRecurrencePattern = "absolute_yearly"
+)
+
+type CalendarRecurrence struct {
+	Pattern             CalendarRecurrencePattern `json:"pattern"`
+	Interval            int                       `json:"interval,omitempty"`
+	DaysOfWeek          []string                  `json:"daysOfWeek,omitempty"`
+	DayOfMonth          int                       `json:"dayOfMonth,omitempty"`
+	Month               string                    `json:"month,omitempty"`
+	EndDate             string                    `json:"endDate,omitempty"`
+	NumberOfOccurrences int                       `json:"numberOfOccurrences,omitempty"`
+}
+
+// CalendarCreateInput creates one bounded calendar item. Required and optional
+// attendees turn it into a meeting invitation.
 type CalendarCreateInput struct {
-	Account           domain.AccountID `json:"account"`
-	Calendar          CalendarFolder   `json:"calendar"`
-	Subject           string           `json:"subject,omitempty"`
-	Body              string           `json:"body,omitempty"`
-	Start             string           `json:"start"`
-	End               string           `json:"end"`
-	Location          string           `json:"location,omitempty"`
-	RequiredAttendees []string         `json:"requiredAttendees,omitempty"`
-	OptionalAttendees []string         `json:"optionalAttendees,omitempty"`
-	TeamsMeeting      bool             `json:"teamsMeeting,omitempty"`
+	Account           domain.AccountID    `json:"account"`
+	Calendar          CalendarFolder      `json:"calendar"`
+	Subject           string              `json:"subject,omitempty"`
+	Body              string              `json:"body,omitempty"`
+	Start             string              `json:"start"`
+	End               string              `json:"end"`
+	Location          string              `json:"location,omitempty"`
+	RequiredAttendees []string            `json:"requiredAttendees,omitempty"`
+	OptionalAttendees []string            `json:"optionalAttendees,omitempty"`
+	TeamsMeeting      bool                `json:"teamsMeeting,omitempty"`
+	AllDay            bool                `json:"allDay,omitempty"`
+	TimeZone          string              `json:"timeZone,omitempty"`
+	Reminder          *CalendarReminder   `json:"reminder,omitempty"`
+	Recurrence        *CalendarRecurrence `json:"recurrence,omitempty"`
 }
 
 // CalendarCreateReview is the exact bounded review shown before creation.
 type CalendarCreateReview struct {
-	Calendar              CalendarFolder `json:"calendar"`
-	Subject               string         `json:"subject,omitempty"`
-	BodyPreview           string         `json:"bodyPreview,omitempty"`
-	BodyBytes             int            `json:"bodyBytes"`
-	BodySHA256            string         `json:"bodySha256"`
-	Start                 string         `json:"start"`
-	End                   string         `json:"end"`
-	Location              string         `json:"location,omitempty"`
-	RequiredAttendees     []string       `json:"requiredAttendees,omitempty"`
-	OptionalAttendees     []string       `json:"optionalAttendees,omitempty"`
-	InvitationsWillBeSent bool           `json:"invitationsWillBeSent"`
-	TeamsMeeting          bool           `json:"teamsMeeting"`
+	Calendar              CalendarFolder      `json:"calendar"`
+	Subject               string              `json:"subject,omitempty"`
+	BodyPreview           string              `json:"bodyPreview,omitempty"`
+	BodyBytes             int                 `json:"bodyBytes"`
+	BodySHA256            string              `json:"bodySha256"`
+	Start                 string              `json:"start"`
+	End                   string              `json:"end"`
+	Location              string              `json:"location,omitempty"`
+	RequiredAttendees     []string            `json:"requiredAttendees,omitempty"`
+	OptionalAttendees     []string            `json:"optionalAttendees,omitempty"`
+	InvitationsWillBeSent bool                `json:"invitationsWillBeSent"`
+	TeamsMeeting          bool                `json:"teamsMeeting"`
+	AllDay                bool                `json:"allDay"`
+	TimeZone              string              `json:"timeZone"`
+	Reminder              *CalendarReminder   `json:"reminder,omitempty"`
+	Recurrence            *CalendarRecurrence `json:"recurrence,omitempty"`
 }
 
 // CalendarBodyReview exposes bounded text while binding the complete body.
@@ -204,6 +238,29 @@ func (input CalendarCreateInput) Validate(maxAttendees int) error {
 	if duration > MaxCalendarEventDuration {
 		return fmt.Errorf("calendar event duration must not exceed %s", MaxCalendarEventDuration)
 	}
+	if len(input.TimeZone) > 128 || strings.TrimSpace(input.TimeZone) != input.TimeZone || strings.ContainsAny(input.TimeZone, "\r\n\x00") {
+		return errors.New("calendar time zone is malformed")
+	}
+	if input.AllDay {
+		boundaryStart := calendarBoundaryForTimeZone(start, input.TimeZone)
+		boundaryEnd := calendarBoundaryForTimeZone(end, input.TimeZone)
+		if !isCalendarMidnight(boundaryStart) || !isCalendarMidnight(boundaryEnd) {
+			return errors.New("all-day calendar start and end must be midnight boundaries in the reviewed time zone")
+		}
+	}
+	if input.Reminder != nil {
+		if input.Reminder.MinutesBeforeStart < 0 || input.Reminder.MinutesBeforeStart > MaxCalendarReminderMinutes {
+			return fmt.Errorf("calendar reminder must be between 0 and %d minutes", MaxCalendarReminderMinutes)
+		}
+		if !input.Reminder.Enabled && input.Reminder.MinutesBeforeStart != 0 {
+			return errors.New("disabled calendar reminder must use zero minutes")
+		}
+	}
+	if input.Recurrence != nil {
+		if err := input.Recurrence.Validate(calendarBoundaryForTimeZone(start, input.TimeZone)); err != nil {
+			return err
+		}
+	}
 	attendees := append(append([]string(nil), input.RequiredAttendees...), input.OptionalAttendees...)
 	if len(attendees) > maxAttendees {
 		return fmt.Errorf("calendar event has %d attendees; maximum is %d", len(attendees), maxAttendees)
@@ -233,7 +290,113 @@ func (input CalendarCreateInput) Review() CalendarCreateReview {
 		OptionalAttendees:     append([]string(nil), input.OptionalAttendees...),
 		InvitationsWillBeSent: len(input.RequiredAttendees)+len(input.OptionalAttendees) > 0,
 		TeamsMeeting:          input.TeamsMeeting,
+		AllDay:                input.AllDay,
+		TimeZone:              effectiveCalendarTimeZone(input.TimeZone),
+		Reminder:              cloneCalendarReminder(input.Reminder),
+		Recurrence:            cloneCalendarRecurrence(input.Recurrence),
 	}
+}
+
+func (recurrence CalendarRecurrence) Validate(start time.Time) error {
+	if recurrence.Interval < 1 || recurrence.Interval > 999 {
+		return errors.New("calendar recurrence interval must be between 1 and 999")
+	}
+	if (recurrence.EndDate == "") == (recurrence.NumberOfOccurrences == 0) {
+		return errors.New("calendar recurrence requires exactly one end date or occurrence count")
+	}
+	if recurrence.NumberOfOccurrences < 0 || recurrence.NumberOfOccurrences > MaxCalendarRecurrenceCount {
+		return fmt.Errorf("calendar recurrence count must be between 1 and %d", MaxCalendarRecurrenceCount)
+	}
+	if recurrence.EndDate != "" {
+		end, err := time.Parse("2006-01-02", recurrence.EndDate)
+		if err != nil || end.Before(time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)) {
+			return errors.New("calendar recurrence end date must be YYYY-MM-DD on or after the start date")
+		}
+	}
+	validDay := func(day string) bool {
+		switch day {
+		case "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday":
+			return true
+		default:
+			return false
+		}
+	}
+	switch recurrence.Pattern {
+	case CalendarRecurrenceDaily:
+		if len(recurrence.DaysOfWeek) != 0 || recurrence.DayOfMonth != 0 || recurrence.Month != "" {
+			return errors.New("daily recurrence accepts only interval and range")
+		}
+	case CalendarRecurrenceWeekly:
+		if len(recurrence.DaysOfWeek) == 0 || recurrence.DayOfMonth != 0 || recurrence.Month != "" {
+			return errors.New("weekly recurrence requires daysOfWeek")
+		}
+		seen := make(map[string]struct{}, len(recurrence.DaysOfWeek))
+		for _, day := range recurrence.DaysOfWeek {
+			if !validDay(day) {
+				return fmt.Errorf("unsupported recurrence weekday %q", day)
+			}
+			if _, exists := seen[day]; exists {
+				return fmt.Errorf("recurrence weekday %q appears more than once", day)
+			}
+			seen[day] = struct{}{}
+		}
+	case CalendarRecurrenceAbsoluteMonthly:
+		if recurrence.DayOfMonth < 1 || recurrence.DayOfMonth > 31 || len(recurrence.DaysOfWeek) != 0 || recurrence.Month != "" {
+			return errors.New("absolute monthly recurrence requires dayOfMonth from 1 to 31")
+		}
+	case CalendarRecurrenceAbsoluteYearly:
+		if recurrence.Interval != 1 || recurrence.DayOfMonth < 1 || recurrence.DayOfMonth > 31 ||
+			len(recurrence.DaysOfWeek) != 0 || !validCalendarMonth(recurrence.Month) {
+			return errors.New("absolute yearly recurrence requires interval 1, month, and dayOfMonth")
+		}
+	default:
+		return fmt.Errorf("unsupported calendar recurrence pattern %q", recurrence.Pattern)
+	}
+	return nil
+}
+
+func validCalendarMonth(month string) bool {
+	switch month {
+	case "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December":
+		return true
+	default:
+		return false
+	}
+}
+
+func effectiveCalendarTimeZone(zone string) string {
+	if zone == "" {
+		return "UTC"
+	}
+	return zone
+}
+
+func calendarBoundaryForTimeZone(value time.Time, zone string) time.Time {
+	if effectiveCalendarTimeZone(zone) == "UTC" {
+		return value.UTC()
+	}
+	return value
+}
+
+func isCalendarMidnight(value time.Time) bool {
+	return value.Hour() == 0 && value.Minute() == 0 && value.Second() == 0 && value.Nanosecond() == 0
+}
+
+func cloneCalendarReminder(value *CalendarReminder) *CalendarReminder {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func cloneCalendarRecurrence(value *CalendarRecurrence) *CalendarRecurrence {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	cloned.DaysOfWeek = append([]string(nil), value.DaysOfWeek...)
+	return &cloned
 }
 
 func reviewCalendarBody(value string) CalendarBodyReview {

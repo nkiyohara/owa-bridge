@@ -22,6 +22,12 @@ non-regular target is rejected even with `--force`.
 Edit account origins and policy in the generated TOML. See
 [configuration.md](configuration.md) for the schema.
 
+For a shared or delegated mailbox that the same signed-in user already has
+permission to use in Outlook Web, add a separate account alias with
+`mailbox = "shared@example.com"`, then pass `--account <alias>`. This performs
+explicit OWA mailbox routing; it neither uses Microsoft Graph nor grants new
+permissions.
+
 ## Diagnose and run the opt-in compatibility smoke test
 
 Check the strict config, selected account, Chromium-family executable, and
@@ -123,8 +129,21 @@ owa mail body --message-id 'opaque-message-id'
 owa mail body --message-id 'opaque-message-id' --json
 ```
 
-The body is bounded to 1 MiB and requested as plain text. Human output strips
-terminal control sequences; JSON output escapes them. If
+The body is bounded to 1 MiB and requested as plain text. Its result includes
+bounded file-attachment metadata but not content. Retrieve one returned ID into
+a new owner-only file, without overwriting an existing path:
+
+```console
+owa mail attachment \
+  --attachment-id 'opaque-attachment-id' \
+  --output ./attachment.bin
+```
+
+Only metadata marked `kind: file` can be retrieved; attached Outlook items are
+listed but not expanded. File content is limited to 2 MiB. `--json` returns it
+as base64 instead of writing a file. Human body output strips terminal control
+sequences; JSON
+output escapes them. If
 `preview_sensitive_reads` is enabled, add `--approve` to prepare and consume the
 exact read in the same CLI process. MCP keeps preview and commit as separate
 calls instead.
@@ -203,6 +222,12 @@ the process argument list. Subject and body injection characters, oversized
 content, and recipient counts above `max_recipients` are rejected before any
 network request.
 
+Use `--body-format html` for reviewed HTML composition. Use `--mode reply`,
+`reply-all`, or `forward` together with the exact source message ID and change
+key. Reply recipients come from Outlook; forwards require explicit recipients.
+Repeat `--attachment ./path` to add up to ten regular files under the per-file
+and aggregate bounds.
+
 This operation uses OWA `CreateItem` with `SaveOnly`; it does not send mail.
 The transport makes exactly one attempt to avoid duplicate drafts after an
 ambiguous timeout. If `preview_reversible_writes` is enabled, add `--approve`
@@ -226,16 +251,31 @@ and SHA-256 digest, repeat the exact command with `--approve`. The CLI prints
 the normalized review to stderr immediately before committing and writes the
 result to stdout. `--json` returns the same stable preview or result schema.
 
-Sending is always an external-write `preview -> commit`; no configuration can
+The same `--body-format`, `--mode`, reference-ID, and `--attachment` flags are
+available for sending. Sending is always an external-write `preview -> commit`;
+no configuration can
 bypass it. The daemon binds the full immutable composition, account, caller,
-expiry, and one-time token. It then calls `CreateItem` once with
-`SendAndSaveCopy` and the Sent Items folder. It never retries. If the connection
-fails after submission, the command reports an unknown outcome: inspect Sent
-Items before creating another preview, because retrying could duplicate mail.
+expiry, and one-time token. A composition without attachments calls
+`CreateItem` with `SendAndSaveCopy`. One with attachments saves the exact draft,
+adds one bounded attachment batch, and submits that version with `SendItem`.
+No write request retries. If any step has an unknown outcome, inspect Drafts
+and Sent Items before creating another preview, because retrying could leave a
+duplicate draft or message.
 
-Only new plain-text messages are supported in this stage. Replies, forwards,
-HTML, attachments, delayed delivery, and draft sending require separate typed
-contracts and are not silently emulated.
+Delayed delivery, sending an independently selected existing draft, and item
+attachments are not silently emulated.
+
+## Permanently delete one message
+
+```console
+owa mail delete \
+  --message-id 'opaque-message-id' \
+  --change-key 'opaque-change-key'
+```
+
+The first call is a destructive preview only. Repeat the exact command with
+`--approve` to issue one `HardDelete` for that exact version. It does not move
+the message to Deleted Items and cannot be undone through Outlook.
 
 Each invocation connects to the same session-owning daemon for its selected
 config. The daemon lazily opens one dedicated browser per account, retains the
@@ -314,11 +354,18 @@ If submission has an unknown outcome, inspect the calendar before preparing
 another event; an automatic retry could create a duplicate or send duplicate
 invitations.
 
-This typed stage supports one plain-text, non-recurring, non-all-day event up to
-31 days long. Recurrence, all-day semantics, HTML, reminders, attachments, and
-arbitrary online-meeting providers are not silently approximated. The body is
-read from a file or stdin and is bounded to 1 MiB. `--json` returns the same
-stable preview/result schema used by MCP.
+Use `--all-day` with midnight start and end boundaries in the reviewed time
+zone. An optional `--time-zone` is an Exchange/Windows time-zone ID such as
+`GMT Standard Time`; UTC is the default, so use `Z` or `+00:00` boundaries when
+omitting it. `--reminder-minutes` enables a bounded reminder.
+`--recurrence daily|weekly|monthly|yearly` combines with an interval, weekly
+day(s), monthly/yearly day and month, and exactly one end date or count.
+
+The body is plain text, read from a file or stdin, and bounded to 1 MiB.
+Recurrence editing after creation, HTML event bodies, calendar attachments,
+relative recurrence patterns, and arbitrary online-meeting providers are not
+silently approximated. `--json` returns the same stable preview/result schema
+used by MCP.
 
 ## Update one event version
 
@@ -333,18 +380,24 @@ owa calendar update \
   --end 2026-07-20T11:00:00+01:00
 ```
 
-The closed patch accepts subject, plain-text body, start plus end, and location.
+The closed patch accepts subject, plain-text body, start plus end and optional
+Exchange time zone, location, all-day status, reminder, and full replacement of
+both required and optional attendee lists.
 Use `--clear-subject`, `--clear-body`, or `--clear-location` for an explicit
 clear. `--body-file` reads replacement content from a file or stdin. Start and
 end must be supplied together and remain a positive interval of at most 31
-days. There is no arbitrary field URI or JSON update surface.
+days. Use `--all-day true|false`, `--reminder-minutes`, or
+`--disable-reminder`. Attendees are changed only when `--replace-attendees` is
+present; then repeat `--required-attendee` and `--optional-attendee`, or provide
+neither to clear both lists. There is no arbitrary field URI or JSON update
+surface.
 
 The first call always previews and changes nothing. Repeat the exact command
 with `--approve` to submit the specialized `UpdateCalendarEvent` action once
 with the listed ID/change key and default event scope. A stale key fails closed.
-Outlook controls meeting-update notifications, so existing attendees may
-receive an update; attendee membership itself is not changed in this stage.
-List the calendar afterward when Outlook omits a refreshed change key.
+Outlook controls meeting-update notifications, so attendee replacement and
+other meeting changes may notify people. List the calendar afterward when
+Outlook omits a refreshed change key.
 
 ## Cancel one event version
 

@@ -18,6 +18,12 @@ default_account = "work"
 [accounts.work]
 origin = "https://outlook.cloud.microsoft"
 
+# Optional second alias for a mailbox the same signed-in user can already
+# access in Outlook Web. This is not a credential or permission grant.
+[accounts.shared]
+origin = "https://outlook.cloud.microsoft"
+mailbox = "shared@example.com"
+
 [policy]
 mode = "guarded"
 preview_sensitive_reads = false
@@ -43,6 +49,13 @@ must use the actual OWA service origin observed by an authorized user.
 The configuration schema cannot represent a password, OAuth token, cookie,
 canary, or refresh token. Browser session material belongs to the dedicated
 browser profile and the in-memory session owner, never this file.
+
+An optional account `mailbox` must be one bare SMTP address. It enables
+explicit shared/delegated mailbox routing with OWA's anchor and explicit-logon
+headers while retaining the configured origin and interactive browser session.
+It does not grant access, add a delegate, or change folder permissions; Outlook
+must already authorize the signed-in user. Keep separate aliases for the user's
+own mailbox and each explicitly routed mailbox, and select one with `--account`.
 
 The daemon publishes a SHA-256 digest of the exact secret-free config it loaded.
 CLI and MCP compare it before every new connection and fail closed if the file

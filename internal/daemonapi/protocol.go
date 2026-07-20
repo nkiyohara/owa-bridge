@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	ProtocolVersion   = 8
+	ProtocolVersion   = 10
 	maxRequestBytes   = 8 << 20
 	maxResponseBytes  = 16 << 20
 	contentType       = "application/json"
@@ -40,6 +40,8 @@ const (
 	MethodMailSearch           Method = "mail.search"
 	MethodMailGetBody          Method = "mail.get_body"
 	MethodMailCommitBody       Method = "mail.commit_body"
+	MethodMailGetAttachment    Method = "mail.get_attachment"
+	MethodMailCommitAttachment Method = "mail.commit_attachment"
 	MethodMailCreateDraft      Method = "mail.create_draft"
 	MethodMailCommitDraft      Method = "mail.commit_draft"
 	MethodMailSend             Method = "mail.send"
@@ -48,6 +50,8 @@ const (
 	MethodMailCommitMove       Method = "mail.commit_move"
 	MethodMailReadState        Method = "mail.set_read_state"
 	MethodMailCommitState      Method = "mail.commit_read_state"
+	MethodMailDelete           Method = "mail.delete"
+	MethodMailCommitDelete     Method = "mail.commit_delete"
 	MethodCalendarList         Method = "calendar.list"
 	MethodCalendarCreate       Method = "calendar.create"
 	MethodCalendarCommit       Method = "calendar.commit_create"
@@ -222,6 +226,8 @@ type Backend interface {
 	SearchMail(context.Context, application.MailSearchInput, domain.Caller) (application.MailPage, error)
 	GetMailBody(context.Context, application.MailBodyInput, domain.Caller) (application.MailBodyAccess, error)
 	CommitMailBody(context.Context, string, domain.Caller) (application.MailBodyAccess, error)
+	GetMailAttachment(context.Context, application.MailAttachmentInput, domain.Caller) (application.MailAttachmentAccess, error)
+	CommitMailAttachment(context.Context, string, domain.Caller) (application.MailAttachmentAccess, error)
 	CreateMailDraft(context.Context, application.MailDraftInput, domain.Caller) (application.MailDraftAccess, error)
 	CommitMailDraft(context.Context, string, domain.Caller) (application.MailDraftAccess, error)
 	SendMail(context.Context, application.MailSendInput, domain.Caller) (application.MailSendAccess, error)
@@ -230,6 +236,8 @@ type Backend interface {
 	CommitMailMove(context.Context, string, domain.Caller) (application.MailMoveAccess, error)
 	SetMailReadState(context.Context, application.MailReadStateInput, domain.Caller) (application.MailReadStateAccess, error)
 	CommitMailReadState(context.Context, string, domain.Caller) (application.MailReadStateAccess, error)
+	DeleteMail(context.Context, application.MailDeleteInput, domain.Caller) (application.MailDeleteAccess, error)
+	CommitMailDelete(context.Context, string, domain.Caller) (application.MailDeleteAccess, error)
 	ListCalendar(context.Context, application.CalendarListInput, domain.Caller) (application.CalendarPage, error)
 	CreateCalendar(context.Context, application.CalendarCreateInput, domain.Caller) (application.CalendarCreateAccess, error)
 	CommitCalendarCreate(context.Context, string, domain.Caller) (application.CalendarCreateAccess, error)
@@ -248,9 +256,11 @@ type TerminalLoginBackend interface {
 func (method Method) valid() bool {
 	switch method {
 	case MethodStatus, MethodShutdown, MethodLogin, MethodTerminalLogin, MethodMailFolders, MethodMailList, MethodMailSearch, MethodMailGetBody, MethodMailCommitBody,
+		MethodMailGetAttachment, MethodMailCommitAttachment,
 		MethodMailCreateDraft, MethodMailCommitDraft, MethodMailSend, MethodMailCommitSend,
 		MethodMailMove, MethodMailCommitMove,
 		MethodMailReadState, MethodMailCommitState,
+		MethodMailDelete, MethodMailCommitDelete,
 		MethodCalendarList, MethodCalendarCreate, MethodCalendarCommit,
 		MethodCalendarUpdate, MethodCalendarCommitUpdate,
 		MethodCalendarCancel, MethodCalendarCommitCancel:

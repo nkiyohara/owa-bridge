@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A local-first Outlook Web mail and calendar CLI and MCP server.">
+  <meta name="description" content="A local Outlook Web mail and calendar MCP server—no Microsoft Graph app required.">
   <meta name="theme-color" content="#ffffff">
   <meta property="og:title" content="owa-bridge">
-  <meta property="og:description" content="Outlook Web mail and calendar from your terminal or AI agent.">
+  <meta property="og:description" content="Outlook Web mail and calendar for your terminal or AI agent, without a Microsoft Graph app.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://nkiyohara.github.io/owa-bridge/">
   <link rel="canonical" href="https://nkiyohara.github.io/owa-bridge/">
@@ -27,14 +27,14 @@
 
   <main id="main">
     <section class="intro">
-      <p class="label">Local-first Outlook Web tooling</p>
+      <p class="label">Outlook MCP without Microsoft Graph</p>
       <h1>Mail and calendar,<br>from your terminal.</h1>
       <p class="lede">
-        A CLI and MCP server that uses your interactive Outlook Web session.
-        No Microsoft Graph app, hosted relay, or password capture.
+        A local CLI and MCP server that uses the Outlook Web session you already
+        sign in to. No Graph app registration, hosted relay, or password capture.
       </p>
       <p class="links">
-        <a class="primary" href="https://github.com/nkiyohara/owa-bridge/releases/latest">Download v0.1.0</a>
+        <a class="primary" href="https://github.com/nkiyohara/owa-bridge/releases/latest">Download latest release</a>
         <a href="https://github.com/nkiyohara/owa-bridge/blob/main/README.md">Read the documentation</a>
       </p>
     </section>
@@ -56,11 +56,11 @@ owa doctor --online</code></pre>
       <div class="features">
         <div>
           <h3>Mail</h3>
-          <p>List and search messages, read bodies, save drafts, send, move, and change read state.</p>
+          <p>Search, read, reply, forward, attach files, save drafts, send, move, and delete—with reviewed writes.</p>
         </div>
         <div>
           <h3>Calendar</h3>
-          <p>List, create, update, and cancel events with required or optional attendees.</p>
+          <p>List, create, update, and cancel events, including all-day, recurrence, reminders, and attendees.</p>
         </div>
         <div>
           <h3>Teams links</h3>
@@ -73,7 +73,7 @@ owa doctor --online</code></pre>
     <section id="agents" aria-labelledby="agents-title">
       <h2 id="agents-title">For AI agents</h2>
       <p>
-        Twenty narrow MCP tools expose the same typed operations and stable JSON
+        Twenty-four narrow MCP tools expose the same typed operations and stable JSON
         as the CLI. Consequential writes use an exact preview and commit flow.
       </p>
       <pre><code>owa mcp setup codex
@@ -97,8 +97,8 @@ claude mcp get owa</code></pre>
         <li>Ambiguous writes fail closed instead of retrying automatically.</li>
       </ul>
       <p class="note">
-        General Teams access, Graph passthrough, hosted relays, unattended
-        login, tenant-wide access, and permanent delete are out of scope.
+        General Teams access, mailbox-rule mutation, Graph passthrough, hosted
+        relays, unattended login, and tenant-wide access are out of scope.
       </p>
     </section>
   </main>

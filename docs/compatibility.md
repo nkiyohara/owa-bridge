@@ -17,10 +17,15 @@ mailbox observations.
 | Single-message move | Preview/commit + JSON | Move and restore | Observed |
 | Single-message read/unread | Preview/commit + JSON | Read and restore unread | Observed |
 | Draft and new send | Preview/commit contracts | Save-only and self-send | Observed |
+| Reply/forward/HTML/file attachments | Typed validation + OWA JSON contracts | Not run | Deterministic only |
+| Attachment metadata/content read | Bounded GetItem/GetAttachment contracts | Not run | Deterministic only |
+| Message hard delete | Destructive preview/commit + JSON | Not run | Deterministic only |
+| Explicit shared/delegated mailbox routing | Config/header contracts | Not run | Deterministic only |
 | Calendar list | Two JSON shapes | Primary calendar | Observed |
 | Calendar create | Preview/commit + JSON | Appointment and self meeting | Observed |
 | Teams link at calendar creation | Closed provider + JSON | Self-attendee meeting | Observed |
 | Calendar update/cancel | Versioned preview/commit + JSON | Update and cleanup | Observed |
+| All-day/reminder/recurrence/attendee replacement | Typed validation + OWA JSON contracts | Not run | Deterministic only |
 | Codex MCP client | Native CLI registration | Empty calendar tool call | Observed |
 | Claude Code MCP client | Native CLI registration | Stdio health check only | Partial |
 | Distribution | 6 archives, 6 packages, 24 SBOMs | Local + release CI | Verified build |
@@ -83,14 +88,17 @@ OWA response body. Review error text for local paths before sharing even this
 content-free report.
 
 Write compatibility is a separate, explicit gate. Test save-only draft creation
-before new-message sending. For sending, use a controlled recipient, review the
-exact preview, and inspect Sent Items after any unknown transport outcome.
+before new-message sending. Test reply, forward, HTML, and attachments only
+against a controlled message and self-recipient. For sending, use a controlled
+recipient, review the exact preview, and inspect Drafts and Sent Items after any
+unknown transport outcome.
 Calendar mutations are not part of online doctor. Do not exercise them without
 separate authorization, a controlled calendar and attendee set, and
-reconciliation after an unknown outcome. Reply, forward, attachments, attendee
-replacement, and recurrence editing are not implemented. Move and read-state
-updates remain separate write-compatibility observations after save-only draft
-creation.
+reconciliation after an unknown outcome. All-day creation, recurrence creation,
+reminder changes, and attendee replacement remain unobserved. Recurrence editing
+is not implemented. Move, read-state updates, and hard deletion remain separate
+write-compatibility observations after save-only draft creation; hard deletion
+must use a disposable self-owned message.
 
 The Teams observation used only the signed-in user as attendee. The specialized
 create response returned `TeamsForBusiness` and an HTTPS join URL, after which

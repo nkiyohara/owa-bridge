@@ -14,6 +14,7 @@ and identifiers in the examples below are synthetic.
 | --- | --- | --- |
 | Mail folders | `folders`, `totalFolders`, `includesLastItem` | `id`, optional `changeKey`, `parentId`, `displayName`, `class`, `distinguishedId`; `childFolderCount`, `totalItemCount`, `unreadItemCount` |
 | Mail list and search | `messages`, `totalItemsInView`, `includesLastItem` | `id`, optional `changeKey`, `subject`, `from`, `receivedAt`, `importance`; `isRead`, `hasAttachments` |
+| Mail attachment | `status`, `attachment` | metadata plus `contentBase64`, bounded to 2 MiB decoded |
 | Calendar list | `events`, `start`, `end` | `id`, optional `changeKey`, `subject`, `location`, `organizer`, `myResponse`, `freeBusy`; `start`, `end`, `isAllDay`, `isOnlineMeeting`, `isOrganizer`, `isCancelled` |
 
 <!-- markdownlint-enable MD013 -->
@@ -30,7 +31,17 @@ An immediate body result has this shape:
   "body": {
     "id": "message-1",
     "changeKey": "change-2",
-    "text": "Synthetic plain-text body"
+    "text": "Synthetic plain-text body",
+    "attachments": [
+      {
+        "id": "attachment-1",
+        "kind": "file",
+        "name": "fixture.txt",
+        "contentType": "text/plain",
+        "size": 17,
+        "isInline": false
+      }
+    ]
   }
 }
 ```
@@ -48,7 +59,9 @@ specific `review`, and a `preview`:
     "subject": "Synthetic message",
     "bodyPreview": "Synthetic body",
     "bodyBytes": 14,
-    "bodySha256": "24a225060015d36ac2507b199f561043ed5374faada4fb75c880c19017f40038"
+    "bodySha256": "24a225060015d36ac2507b199f561043ed5374faada4fb75c880c19017f40038",
+    "bodyFormat": "text",
+    "composeMode": "new"
   },
   "preview": {
     "token": "REDACTED",
@@ -73,11 +86,12 @@ Reviews bind the complete input while bounding displayed content:
 
 | Operation | Review fields |
 | --- | --- |
-| Draft or send | optional `to`, `cc`, `bcc`, `subject`, `bodyPreview`; required `bodyBytes`, `bodySha256` |
+| Draft or send | optional recipients, subject, body preview, reference identity, attachments; required body size/hash, `bodyFormat`, `composeMode`; attachment content is represented by size and SHA-256 |
+| Mail hard delete | `messageId`, `changeKey`, `deleteType` |
 | Mail move | `messageId`, `changeKey`, `destination` |
 | Read-state update | `messageId`, `changeKey`, `state` |
-| Calendar create | `calendar`, optional subject/body/location/attendees, start/end, `bodyBytes`, `bodySha256`, `invitationsWillBeSent`, `teamsMeeting` |
-| Calendar update | `eventId`, `changeKey`, only supplied patch fields, bounded body review, `meetingUpdateMode` |
+| Calendar create | calendar, optional subject/body/location/attendees/reminder/recurrence, start/end/time zone, all-day and invitation/Teams flags, body size/hash |
+| Calendar update | identity, only supplied patch fields, optional reminder and attendee replacement, bounded body review, `meetingUpdateMode` |
 | Calendar cancellation | `eventId`, `changeKey`, `cancellationMode`, `deleteType` |
 
 <!-- markdownlint-enable MD013 -->
@@ -88,11 +102,13 @@ Reviews bind the complete input while bounding displayed content:
 
 | Operation | Success status | Result object and fields |
 | --- | --- | --- |
-| Body read | `completed` | `body`: `id`, optional `changeKey`, `text` |
+| Body read | `completed` | `body`: `id`, optional `changeKey`, `text`, optional attachment metadata |
+| Attachment read | `completed` | `attachment`: metadata and `contentBase64` |
 | Draft save | `completed` | `draft`: `id`, optional `changeKey` |
-| New send | `sent` | `sent`: optional `id`, `changeKey` |
+| Send | `sent` | `sent`: optional `id`, `changeKey` |
 | Mail move | `completed` | `moved`: optional `id`, `changeKey` |
 | Read-state update | `completed` | `updated`: optional `id`, `changeKey`; required `state` |
+| Mail hard delete | `deleted` | `deleted`: `id` |
 | Calendar create | `created` | `created`: `id`, optional `changeKey`, required `isOnlineMeeting`, optional `onlineMeetingProvider`, `onlineMeetingJoinUrl` |
 | Calendar update | `updated` | `updated`: optional `id`, `changeKey` |
 | Calendar cancellation | `cancelled` | `cancelled`: `id` |

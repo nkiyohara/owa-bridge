@@ -42,6 +42,7 @@ type Authorizer interface {
 // Options configures the hardened OWA HTTP boundary.
 type Options struct {
 	Origin           string
+	Mailbox          string
 	Authorizer       Authorizer
 	HTTPClient       *http.Client
 	UserAgent        string
@@ -53,6 +54,7 @@ type Options struct {
 // Client calls only registered OWA actions against one exact HTTPS origin.
 type Client struct {
 	origin           *url.URL
+	mailbox          string
 	authorizer       Authorizer
 	http             *http.Client
 	userAgent        string
@@ -106,12 +108,16 @@ func NewClient(options Options) (*Client, error) {
 	if options.UserAgent == "" {
 		options.UserAgent = "owa-bridge/dev"
 	}
+	if err := validateExplicitMailbox(options.Mailbox); err != nil {
+		return nil, err
+	}
 	if strings.ContainsAny(options.UserAgent, "\r\n\x00") {
 		return nil, errors.New("OWA user agent contains a forbidden character")
 	}
 
 	return &Client{
 		origin:           origin,
+		mailbox:          options.Mailbox,
 		authorizer:       options.Authorizer,
 		http:             hardenedHTTPClient(options.HTTPClient),
 		userAgent:        options.UserAgent,
@@ -214,12 +220,30 @@ func (client *Client) callOnce(ctx context.Context, action Action, payload []byt
 	if err := client.authorizer.Apply(request); err != nil {
 		return nil, fmt.Errorf("authorize OWA request: %w", err)
 	}
+	if client.mailbox != "" {
+		request.Header.Set("X-AnchorMailbox", client.mailbox)
+		request.Header.Set("X-OWA-ExplicitLogonUser", client.mailbox)
+	}
 
 	response, err := client.http.Do(request)
 	if err != nil {
 		return nil, classifyPostRequestError(action, fmt.Errorf("execute OWA request: %w", err))
 	}
 	return response, nil
+}
+
+func validateExplicitMailbox(value string) error {
+	if value == "" {
+		return nil
+	}
+	if len(value) > 254 || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\r\n\x00") {
+		return errors.New("explicit OWA mailbox must be a bare SMTP address")
+	}
+	local, domain, found := strings.Cut(value, "@")
+	if !found || local == "" || domain == "" || strings.ContainsAny(value, " <>\t") {
+		return errors.New("explicit OWA mailbox must be a bare SMTP address")
+	}
+	return nil
 }
 
 func classifyPostRequestError(action Action, failure error) error {

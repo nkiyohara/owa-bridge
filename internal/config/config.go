@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/mail"
 	"net/url"
 	"sort"
 	"strings"
@@ -26,8 +27,11 @@ type Config struct {
 }
 
 // Account identifies one Outlook Web origin by a non-personal local alias.
+// Mailbox optionally selects a shared or delegated SMTP mailbox while keeping
+// authentication in the same browser-owned Outlook Web session.
 type Account struct {
-	Origin string `toml:"origin"`
+	Origin  string `toml:"origin"`
+	Mailbox string `toml:"mailbox,omitempty"`
 }
 
 // Policy maps persisted settings into the deterministic policy core.
@@ -107,6 +111,9 @@ func (configuration Config) Validate() error {
 		if err := validateOrigin(configuration.Accounts[alias].Origin); err != nil {
 			return fmt.Errorf("validate account %q: %w", alias, err)
 		}
+		if err := validateMailbox(configuration.Accounts[alias].Mailbox); err != nil {
+			return fmt.Errorf("validate account %q: %w", alias, err)
+		}
 	}
 
 	if err := configuration.Policy.Rules().Validate(); err != nil {
@@ -124,6 +131,20 @@ func (configuration Config) Validate() error {
 	}
 	if strings.ContainsAny(configuration.Browser.Executable, "\r\n\x00") {
 		return errors.New("browser executable contains a forbidden character")
+	}
+	return nil
+}
+
+func validateMailbox(value string) error {
+	if value == "" {
+		return nil
+	}
+	if len(value) > 254 || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\r\n\x00") {
+		return errors.New("mailbox must be a bare SMTP address")
+	}
+	parsed, err := mail.ParseAddress(value)
+	if err != nil || parsed.Name != "" || parsed.Address != value || !strings.Contains(value, "@") {
+		return errors.New("mailbox must be a bare SMTP address")
 	}
 	return nil
 }

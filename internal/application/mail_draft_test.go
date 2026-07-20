@@ -76,6 +76,46 @@ func TestMailDraftReviewBoundsPreviewAndBindsFullBody(t *testing.T) {
 	}
 }
 
+func TestMailDraftSupportsReviewedResponseHTMLAndAttachments(t *testing.T) {
+	t.Parallel()
+
+	input := MailDraftInput{
+		Account: "work", Body: "<p>Thanks</p>", BodyFormat: MailBodyHTML,
+		ComposeMode:        MailComposeReplyAll,
+		ReferenceMessageID: "message-1", ReferenceChangeKey: "change-1",
+		Attachments: []MailFileAttachment{{
+			Name: "fixture.txt", ContentType: "text/plain", Content: []byte("fixture"),
+		}},
+	}
+	if err := input.Validate(20); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	review := input.Review()
+	if review.ComposeMode != MailComposeReplyAll || review.BodyFormat != MailBodyHTML ||
+		len(review.Attachments) != 1 || review.Attachments[0].Bytes != 7 ||
+		len(review.Attachments[0].SHA256) != 64 {
+		t.Fatalf("unexpected review: %+v", review)
+	}
+}
+
+func TestMailDraftRejectsAmbiguousResponseModesAndAttachments(t *testing.T) {
+	t.Parallel()
+
+	tests := []MailDraftInput{
+		{Account: "work", ComposeMode: MailComposeReply, ReferenceMessageID: "message-1"},
+		{Account: "work", ComposeMode: MailComposeReply, ReferenceMessageID: "message-1", ReferenceChangeKey: "change-1", To: []string{"a@example.invalid"}},
+		{Account: "work", ComposeMode: MailComposeForward, ReferenceMessageID: "message-1", ReferenceChangeKey: "change-1"},
+		{Account: "work", To: []string{"a@example.invalid"}, BodyFormat: "markdown"},
+		{Account: "work", To: []string{"a@example.invalid"}, Attachments: []MailFileAttachment{{Name: "../fixture.txt", Content: []byte("x")}}},
+		{Account: "work", To: []string{"a@example.invalid"}, Attachments: []MailFileAttachment{{Name: "fixture", Content: make([]byte, MaxMailAttachmentBytes+1)}}},
+	}
+	for _, input := range tests {
+		if err := input.Validate(20); err == nil {
+			t.Fatalf("Validate(%+v) unexpectedly succeeded", input)
+		}
+	}
+}
+
 func TestMailDraftApprovalCannotBeConsumedByBodyTool(t *testing.T) {
 	t.Parallel()
 

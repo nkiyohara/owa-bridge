@@ -19,10 +19,12 @@ type fakeBackend struct {
 	mailInput         application.MailListInput
 	searchInput       application.MailSearchInput
 	bodyInput         application.MailBodyInput
+	attachmentInput   application.MailAttachmentInput
 	draftInput        application.MailDraftInput
 	sendInput         application.MailSendInput
 	moveInput         application.MailMoveInput
 	stateInput        application.MailReadStateInput
+	deleteInput       application.MailDeleteInput
 	folderInput       application.MailFolderListInput
 	calendarListInput application.CalendarListInput
 	createInput       application.CalendarCreateInput
@@ -76,6 +78,19 @@ func (backend *fakeBackend) CommitMailBody(_ context.Context, token string, call
 		Status: "completed", Body: &application.MailBody{ID: "message-1", Text: "Synthetic body"},
 	}, nil
 }
+func (backend *fakeBackend) GetMailAttachment(_ context.Context, input application.MailAttachmentInput, caller domain.Caller) (application.MailAttachmentAccess, error) {
+	backend.attachmentInput, backend.caller = input, caller
+	return application.MailAttachmentAccess{
+		Status: "completed", Attachment: &application.MailAttachment{
+			MailAttachmentMetadata: application.MailAttachmentMetadata{ID: input.AttachmentID},
+			ContentBase64:          "Zml4dHVyZQ==",
+		},
+	}, nil
+}
+func (backend *fakeBackend) CommitMailAttachment(_ context.Context, token string, caller domain.Caller) (application.MailAttachmentAccess, error) {
+	backend.commitToken, backend.caller = token, caller
+	return application.MailAttachmentAccess{Status: "completed"}, nil
+}
 func (backend *fakeBackend) CreateMailDraft(_ context.Context, input application.MailDraftInput, caller domain.Caller) (application.MailDraftAccess, error) {
 	backend.draftInput, backend.caller = input, caller
 	return application.MailDraftAccess{
@@ -114,6 +129,16 @@ func (backend *fakeBackend) CommitMailReadState(_ context.Context, token string,
 	return application.MailReadStateAccess{
 		Status: "completed", Updated: &application.MailReadStateResult{ID: "message-1", State: application.MailReadStateUnread},
 	}, nil
+}
+
+func (backend *fakeBackend) DeleteMail(_ context.Context, input application.MailDeleteInput, caller domain.Caller) (application.MailDeleteAccess, error) {
+	backend.deleteInput, backend.caller = input, caller
+	return application.MailDeleteAccess{}, nil
+}
+
+func (backend *fakeBackend) CommitMailDelete(_ context.Context, token string, caller domain.Caller) (application.MailDeleteAccess, error) {
+	backend.commitToken, backend.caller = token, caller
+	return application.MailDeleteAccess{}, nil
 }
 func (backend *fakeBackend) ListCalendar(_ context.Context, input application.CalendarListInput, caller domain.Caller) (application.CalendarPage, error) {
 	backend.calendarListInput, backend.caller = input, caller
@@ -275,6 +300,18 @@ func TestClientAndServerRoundTripOverLocalIPC(t *testing.T) {
 	body, err = client.CommitMailBody(t.Context(), "opv1_body", caller)
 	if err != nil || body.Status != "completed" || backend.commitToken != "opv1_body" {
 		t.Fatalf("CommitMailBody() = %+v, %v; token=%q", body, err, backend.commitToken)
+	}
+	attachment, err := client.GetMailAttachment(t.Context(), application.MailAttachmentInput{
+		Account: "work", AttachmentID: "attachment-1",
+	}, caller)
+	if err != nil || attachment.Attachment == nil ||
+		attachment.Attachment.ContentBase64 != "Zml4dHVyZQ==" ||
+		backend.attachmentInput.AttachmentID != "attachment-1" {
+		t.Fatalf("GetMailAttachment() = %+v, %v; backend input=%+v", attachment, err, backend.attachmentInput)
+	}
+	attachment, err = client.CommitMailAttachment(t.Context(), "opv1_attachment", caller)
+	if err != nil || attachment.Status != "completed" || backend.commitToken != "opv1_attachment" {
+		t.Fatalf("CommitMailAttachment() = %+v, %v; token=%q", attachment, err, backend.commitToken)
 	}
 	draft, err := client.CreateMailDraft(t.Context(), application.MailDraftInput{
 		Account: "work", To: []string{"reader@example.test"}, Subject: "Synthetic draft", Body: "Synthetic body",

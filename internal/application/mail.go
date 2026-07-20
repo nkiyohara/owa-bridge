@@ -77,10 +77,12 @@ type MailPort interface {
 	MailSearcher
 	MailFolderReader
 	MailBodyReader
+	MailAttachmentReader
 	MailDraftWriter
 	MailSender
 	MailMover
 	MailReadStateWriter
+	MailDeleter
 }
 
 // MailOptions applies configured limits at the application boundary.
@@ -90,16 +92,18 @@ type MailOptions struct {
 
 // MailService applies policy and audit around mail use cases.
 type MailService struct {
-	guard         *Guard
-	reader        MailReader
-	searcher      MailSearcher
-	folderReader  MailFolderReader
-	bodyReader    MailBodyReader
-	draftWriter   MailDraftWriter
-	sender        MailSender
-	mover         MailMover
-	readState     MailReadStateWriter
-	maxRecipients int
+	guard            *Guard
+	reader           MailReader
+	searcher         MailSearcher
+	folderReader     MailFolderReader
+	bodyReader       MailBodyReader
+	attachmentReader MailAttachmentReader
+	draftWriter      MailDraftWriter
+	sender           MailSender
+	mover            MailMover
+	readState        MailReadStateWriter
+	deleter          MailDeleter
+	maxRecipients    int
 }
 
 // NewMailService requires the shared guard and a transport port.
@@ -114,7 +118,9 @@ func NewMailService(guard *Guard, reader MailPort, options MailOptions) (*MailSe
 		return nil, fmt.Errorf("max mail recipients must be between 1 and %d", MaxMailRecipients)
 	}
 	return &MailService{
-		guard: guard, reader: reader, searcher: reader, folderReader: reader, bodyReader: reader, draftWriter: reader, sender: reader, mover: reader, readState: reader,
+		guard: guard, reader: reader, searcher: reader, folderReader: reader,
+		bodyReader: reader, attachmentReader: reader, draftWriter: reader,
+		sender: reader, mover: reader, readState: reader, deleter: reader,
 		maxRecipients: options.MaxRecipients,
 	}, nil
 }

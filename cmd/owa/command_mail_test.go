@@ -37,6 +37,15 @@ func TestReadDraftBodyBoundsStdin(t *testing.T) {
 	}
 }
 
+func TestReadMailAttachmentsRejectsCountBeforeOpeningFiles(t *testing.T) {
+	t.Parallel()
+
+	paths := make([]string, application.MaxMailAttachments+1)
+	if _, err := readMailAttachments(paths); err == nil {
+		t.Fatal("readMailAttachments() accepted too many paths")
+	}
+}
+
 func TestWriteMailTableNeverEmitsMailboxControls(t *testing.T) {
 	t.Parallel()
 

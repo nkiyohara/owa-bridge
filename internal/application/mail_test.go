@@ -37,6 +37,14 @@ func (reader *fakeMailReader) GetMessageBody(context.Context, MailBodyInput) (Ma
 	return MailBody{ID: "message-1", Text: "Synthetic body"}, reader.err
 }
 
+func (reader *fakeMailReader) GetMailAttachment(context.Context, MailAttachmentInput) (MailAttachment, error) {
+	reader.calls++
+	return MailAttachment{
+		MailAttachmentMetadata: MailAttachmentMetadata{ID: "attachment-1", Name: "fixture.txt"},
+		ContentBase64:          "c3ludGhldGljIGF0dGFjaG1lbnQ=",
+	}, reader.err
+}
+
 func (reader *fakeMailReader) CreateMailDraft(context.Context, MailDraftInput) (MailDraft, error) {
 	reader.calls++
 	return MailDraft{ID: "draft-1", ChangeKey: "change-1"}, reader.err
@@ -55,6 +63,11 @@ func (reader *fakeMailReader) MoveMail(context.Context, MailMoveInput) (MailMove
 func (reader *fakeMailReader) SetMailReadState(context.Context, MailReadStateInput) (MailReadStateResult, error) {
 	reader.calls++
 	return MailReadStateResult{ID: "message-1", ChangeKey: "change-2"}, reader.err
+}
+
+func (reader *fakeMailReader) DeleteMail(context.Context, MailDeleteInput) error {
+	reader.calls++
+	return reader.err
 }
 
 func testMailService(t *testing.T, reader MailPort) (*MailService, *memoryAudit) {

@@ -1,10 +1,14 @@
 package main
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"unicode"
@@ -14,14 +18,16 @@ import (
 )
 
 type mailCommand struct {
-	Folders mailFoldersCommand `cmd:"" help:"Discover mail folders and their opaque IDs."`
-	List    mailListCommand    `cmd:"" help:"List message metadata in a folder."`
-	Search  mailSearchCommand  `cmd:"" help:"Search message metadata in one folder with Outlook AQS."`
-	Body    mailBodyCommand    `cmd:"" help:"Review and read plain text for one explicit message ID."`
-	Move    mailMoveCommand    `cmd:"" help:"Review and move one versioned message to one folder."`
-	Mark    mailMarkCommand    `cmd:"" help:"Review and mark one versioned message read or unread."`
-	Draft   mailDraftCommand   `cmd:"" help:"Review and save one plain-text draft without sending."`
-	Send    mailSendCommand    `cmd:"" help:"Review and send one new plain-text message."`
+	Folders    mailFoldersCommand    `cmd:"" help:"Discover mail folders and their opaque IDs."`
+	List       mailListCommand       `cmd:"" help:"List message metadata in a folder."`
+	Search     mailSearchCommand     `cmd:"" help:"Search message metadata in one folder with Outlook AQS."`
+	Body       mailBodyCommand       `cmd:"" help:"Review and read plain text for one explicit message ID."`
+	Attachment mailAttachmentCommand `cmd:"" help:"Review and retrieve one bounded file attachment."`
+	Move       mailMoveCommand       `cmd:"" help:"Review and move one versioned message to one folder."`
+	Mark       mailMarkCommand       `cmd:"" help:"Review and mark one versioned message read or unread."`
+	Delete     mailDeleteCommand     `cmd:"" help:"Review and permanently delete one versioned message."`
+	Draft      mailDraftCommand      `cmd:"" help:"Review and save a new, reply, or forward draft without sending."`
+	Send       mailSendCommand       `cmd:"" help:"Review and send one new message, reply, or forward."`
 }
 
 type mailFoldersCommand struct {
@@ -36,25 +42,35 @@ type mailFoldersCommand struct {
 }
 
 type mailSendCommand struct {
-	Account  string   `help:"Configured account alias; defaults to default_account."`
-	To       []string `help:"Bare To recipient; repeat for multiple recipients."`
-	CC       []string `name:"cc" help:"Bare Cc recipient; repeat for multiple recipients."`
-	BCC      []string `name:"bcc" help:"Bare Bcc recipient; repeat for multiple recipients."`
-	Subject  string   `help:"Message subject; CR/LF are rejected."`
-	BodyFile string   `name:"body-file" help:"Plain-text body file, or - for stdin."`
-	Approve  bool     `help:"Send the exact preview generated from these arguments."`
-	JSON     bool     `help:"Write the stable machine-readable schema."`
+	Account            string   `help:"Configured account alias; defaults to default_account."`
+	To                 []string `help:"Bare To recipient; repeat for multiple recipients."`
+	CC                 []string `name:"cc" help:"Bare Cc recipient; repeat for multiple recipients."`
+	BCC                []string `name:"bcc" help:"Bare Bcc recipient; repeat for multiple recipients."`
+	Subject            string   `help:"Message subject; CR/LF are rejected."`
+	BodyFile           string   `name:"body-file" help:"Text or HTML body file, or - for stdin."`
+	BodyFormat         string   `name:"body-format" default:"text" enum:"text,html" help:"Message body format."`
+	Mode               string   `default:"new" enum:"new,reply,reply-all,forward" help:"Composition mode."`
+	ReferenceMessageID string   `name:"reference-message-id" help:"Exact source message ID for replies or forwards."`
+	ReferenceChangeKey string   `name:"reference-change-key" help:"Exact source change key for replies or forwards."`
+	Attachments        []string `name:"attachment" type:"path" help:"File to attach; repeat as needed."`
+	Approve            bool     `help:"Send the exact preview generated from these arguments."`
+	JSON               bool     `help:"Write the stable machine-readable schema."`
 }
 
 type mailDraftCommand struct {
-	Account  string   `help:"Configured account alias; defaults to default_account."`
-	To       []string `help:"Bare To recipient; repeat for multiple recipients."`
-	CC       []string `name:"cc" help:"Bare Cc recipient; repeat for multiple recipients."`
-	BCC      []string `name:"bcc" help:"Bare Bcc recipient; repeat for multiple recipients."`
-	Subject  string   `help:"Draft subject; CR/LF are rejected."`
-	BodyFile string   `name:"body-file" help:"Plain-text body file, or - for stdin."`
-	Approve  bool     `help:"Save the exact preview generated from these arguments when policy requires approval."`
-	JSON     bool     `help:"Write the stable machine-readable schema."`
+	Account            string   `help:"Configured account alias; defaults to default_account."`
+	To                 []string `help:"Bare To recipient; repeat for multiple recipients."`
+	CC                 []string `name:"cc" help:"Bare Cc recipient; repeat for multiple recipients."`
+	BCC                []string `name:"bcc" help:"Bare Bcc recipient; repeat for multiple recipients."`
+	Subject            string   `help:"Draft subject; CR/LF are rejected."`
+	BodyFile           string   `name:"body-file" help:"Text or HTML body file, or - for stdin."`
+	BodyFormat         string   `name:"body-format" default:"text" enum:"text,html" help:"Draft body format."`
+	Mode               string   `default:"new" enum:"new,reply,reply-all,forward" help:"Composition mode."`
+	ReferenceMessageID string   `name:"reference-message-id" help:"Exact source message ID for replies or forwards."`
+	ReferenceChangeKey string   `name:"reference-change-key" help:"Exact source change key for replies or forwards."`
+	Attachments        []string `name:"attachment" type:"path" help:"File to attach; repeat as needed."`
+	Approve            bool     `help:"Save the exact preview generated from these arguments when policy requires approval."`
+	JSON               bool     `help:"Write the stable machine-readable schema."`
 }
 
 type mailBodyCommand struct {
@@ -62,6 +78,14 @@ type mailBodyCommand struct {
 	MessageID string `name:"message-id" help:"Exact message ID returned by mail list (required)."`
 	Approve   bool   `help:"Commit an in-process preview when sensitive reads require approval."`
 	JSON      bool   `help:"Write the stable machine-readable schema."`
+}
+
+type mailAttachmentCommand struct {
+	Account      string `help:"Configured account alias; defaults to default_account."`
+	AttachmentID string `name:"attachment-id" help:"Exact attachment ID returned by mail body (required)."`
+	Output       string `type:"path" help:"New local output file; existing files are never overwritten."`
+	Approve      bool   `help:"Commit an in-process preview when sensitive reads require approval."`
+	JSON         bool   `help:"Write base64 content in the stable machine-readable schema instead of a file."`
 }
 
 type mailListCommand struct {
@@ -101,6 +125,14 @@ type mailMarkCommand struct {
 	ChangeKey string `name:"change-key" help:"Exact change key returned with the message ID."`
 	State     string `help:"Required target state: read or unread."`
 	Approve   bool   `help:"Apply the exact preview generated from these arguments when policy requires approval."`
+	JSON      bool   `help:"Write the stable machine-readable schema."`
+}
+
+type mailDeleteCommand struct {
+	Account   string `help:"Configured account alias; defaults to default_account."`
+	MessageID string `name:"message-id" help:"Exact message ID returned by mail list or search."`
+	ChangeKey string `name:"change-key" help:"Exact change key returned with the message ID."`
+	Approve   bool   `help:"Permanently delete the exact reviewed message version."`
 	JSON      bool   `help:"Write the stable machine-readable schema."`
 }
 
@@ -348,6 +380,56 @@ func (command *mailMarkCommand) Run(app *runtime) (returnErr error) {
 	return err
 }
 
+func (command *mailDeleteCommand) Run(app *runtime) (returnErr error) {
+	configuration, _, err := app.loadConfig()
+	if err != nil {
+		return err
+	}
+	accountID, err := app.account(configuration, command.Account)
+	if err != nil {
+		return err
+	}
+	input := application.MailDeleteInput{
+		Account: accountID, MessageID: command.MessageID, ChangeKey: command.ChangeKey,
+	}
+	if err := input.Validate(); err != nil {
+		return err
+	}
+	client, _, err := app.openDaemon(app.context)
+	if err != nil {
+		return err
+	}
+	defer func() { returnErr = errors.Join(returnErr, client.Close()) }()
+	access, err := client.DeleteMail(app.context, input, app.caller())
+	if err != nil {
+		return err
+	}
+	if access.Status != "approval_required" || access.Preview == nil {
+		return errors.New("mail delete did not produce its mandatory preview")
+	}
+	if !command.Approve {
+		if command.JSON {
+			return writeJSON(app.stdout, access)
+		}
+		return writeMailDeleteReview(app.stdout, access.Review, false)
+	}
+	if err := writeMailDeleteReview(app.stderr, access.Review, true); err != nil {
+		return err
+	}
+	access, err = client.CommitMailDelete(app.context, access.Preview.Token, app.caller())
+	if err != nil {
+		return err
+	}
+	if access.Status != "deleted" || access.Deleted == nil {
+		return errors.New("mail delete commit completed without deleted status")
+	}
+	if command.JSON {
+		return writeJSON(app.stdout, access)
+	}
+	_, err = fmt.Fprintln(app.stdout, "Permanently deleted the exact message version.")
+	return err
+}
+
 func (command *mailBodyCommand) Run(app *runtime) (returnErr error) {
 	configuration, _, err := app.loadConfig()
 	if err != nil {
@@ -400,7 +482,101 @@ func (command *mailBodyCommand) Run(app *runtime) (returnErr error) {
 		sanitizeCell(access.Body.ID, 80),
 		sanitizeTerminalText(access.Body.Text),
 	)
+	if err != nil {
+		return err
+	}
+	if len(access.Body.Attachments) != 0 {
+		if _, err := fmt.Fprintln(app.stdout, "Attachments (private, untrusted metadata):"); err != nil {
+			return err
+		}
+		for _, attachment := range access.Body.Attachments {
+			if _, err := fmt.Fprintf(
+				app.stdout, "- %s (%s, %s, %d bytes%s): %s\n",
+				sanitizeCell(attachment.Name, 128), sanitizeCell(attachment.Kind, 16),
+				sanitizeCell(attachment.ContentType, 128),
+				attachment.Size, inlineAttachmentLabel(attachment.IsInline),
+				sanitizeCell(attachment.ID, 4096),
+			); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (command *mailAttachmentCommand) Run(app *runtime) (returnErr error) {
+	if !command.JSON && command.Output == "" {
+		return errors.New("output is required unless json is selected")
+	}
+	configuration, _, err := app.loadConfig()
+	if err != nil {
+		return err
+	}
+	accountID, err := app.account(configuration, command.Account)
+	if err != nil {
+		return err
+	}
+	input := application.MailAttachmentInput{Account: accountID, AttachmentID: command.AttachmentID}
+	if err := input.Validate(); err != nil {
+		return err
+	}
+	client, _, err := app.openDaemon(app.context)
+	if err != nil {
+		return err
+	}
+	defer func() { returnErr = errors.Join(returnErr, client.Close()) }()
+	access, err := client.GetMailAttachment(app.context, input, app.caller())
+	if err != nil {
+		return err
+	}
+	if access.Status == "approval_required" {
+		if access.Preview == nil {
+			return errors.New("mail attachment read required approval without returning a preview")
+		}
+		if !command.Approve {
+			if command.JSON {
+				return writeJSON(app.stdout, access)
+			}
+			return writeMailAttachmentReview(app.stdout, command.AttachmentID, false)
+		}
+		if err := writeMailAttachmentReview(app.stderr, command.AttachmentID, true); err != nil {
+			return err
+		}
+		access, err = client.CommitMailAttachment(app.context, access.Preview.Token, app.caller())
+		if err != nil {
+			return err
+		}
+	}
+	if access.Attachment == nil {
+		return errors.New("mail attachment operation completed without content")
+	}
+	if command.JSON {
+		return writeJSON(app.stdout, access)
+	}
+	content, err := base64.StdEncoding.DecodeString(access.Attachment.ContentBase64)
+	if err != nil || len(content) > application.MaxMailAttachmentBytes {
+		return errors.New("mail attachment response contained malformed base64 content")
+	}
+	file, err := os.OpenFile(command.Output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- explicit CLI output.
+	if err != nil {
+		return fmt.Errorf("create attachment output: %w", err)
+	}
+	defer func() { returnErr = errors.Join(returnErr, file.Close()) }()
+	if _, err := file.Write(content); err != nil {
+		return fmt.Errorf("write attachment output: %w", err)
+	}
+	_, err = fmt.Fprintf(
+		app.stdout, "Saved %d-byte attachment to %s.\n",
+		len(content), sanitizeCell(command.Output, 4096),
+	)
 	return err
+}
+
+func inlineAttachmentLabel(inline bool) string {
+	if inline {
+		return ", inline"
+	}
+	return ""
 }
 
 func (command *mailDraftCommand) Run(app *runtime) (returnErr error) {
@@ -416,9 +592,18 @@ func (command *mailDraftCommand) Run(app *runtime) (returnErr error) {
 	if err != nil {
 		return err
 	}
+	attachments, err := readMailAttachments(command.Attachments)
+	if err != nil {
+		return err
+	}
 	input := application.MailDraftInput{
 		Account: accountID, To: command.To, CC: command.CC, BCC: command.BCC,
 		Subject: command.Subject, Body: body,
+		BodyFormat:         application.MailBodyFormat(command.BodyFormat),
+		ComposeMode:        parseMailComposeMode(command.Mode),
+		ReferenceMessageID: command.ReferenceMessageID,
+		ReferenceChangeKey: command.ReferenceChangeKey,
+		Attachments:        attachments,
 	}
 	if err := input.Validate(configuration.Policy.MaxRecipients); err != nil {
 		return err
@@ -478,9 +663,18 @@ func (command *mailSendCommand) Run(app *runtime) (returnErr error) {
 	if err != nil {
 		return err
 	}
+	attachments, err := readMailAttachments(command.Attachments)
+	if err != nil {
+		return err
+	}
 	input := application.MailSendInput{
 		Account: accountID, To: command.To, CC: command.CC, BCC: command.BCC,
 		Subject: command.Subject, Body: body,
+		BodyFormat:         application.MailBodyFormat(command.BodyFormat),
+		ComposeMode:        parseMailComposeMode(command.Mode),
+		ReferenceMessageID: command.ReferenceMessageID,
+		ReferenceChangeKey: command.ReferenceChangeKey,
+		Attachments:        attachments,
 	}
 	if err := input.Validate(configuration.Policy.MaxRecipients); err != nil {
 		return err
@@ -546,15 +740,82 @@ func writeMailContentReview(
 ) error {
 	_, err := fmt.Fprintf(
 		writer,
-		"%s\nTo: %s\nCc: %s\nBcc: %s\nSubject: %s\nBody (%d bytes, SHA-256 %s):\n%s\n",
+		"%s\nMode: %s\nTo: %s\nCc: %s\nBcc: %s\nSubject: %s\nBody format: %s\nBody (%d bytes, SHA-256 %s):\n%s\n",
 		action,
+		sanitizeCell(string(review.ComposeMode), 16),
 		sanitizeCell(strings.Join(review.To, ", "), 512),
 		sanitizeCell(strings.Join(review.CC, ", "), 512),
 		sanitizeCell(strings.Join(review.BCC, ", "), 512),
-		sanitizeCell(review.Subject, 998), review.BodyBytes,
+		sanitizeCell(review.Subject, 998), sanitizeCell(string(review.BodyFormat), 16), review.BodyBytes,
 		sanitizeCell(review.BodySHA256, 64), sanitizeTerminalText(review.BodyPreview),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	for _, attachment := range review.Attachments {
+		if _, err := fmt.Fprintf(
+			writer, "Attachment: %s (%s, %d bytes, SHA-256 %s)\n",
+			sanitizeCell(attachment.Name, 255), sanitizeCell(attachment.ContentType, 255),
+			attachment.Bytes, sanitizeCell(attachment.SHA256, 64),
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parseMailComposeMode(value string) application.MailComposeMode {
+	if value == "reply-all" {
+		return application.MailComposeReplyAll
+	}
+	return application.MailComposeMode(value)
+}
+
+func readMailAttachments(paths []string) ([]application.MailFileAttachment, error) {
+	if len(paths) > application.MaxMailAttachments {
+		return nil, fmt.Errorf("mail has %d attachments; maximum is %d", len(paths), application.MaxMailAttachments)
+	}
+	attachments := make([]application.MailFileAttachment, 0, len(paths))
+	var totalBytes int64
+	for _, path := range paths {
+		file, err := os.Open(path) // #nosec G304 -- each path is an explicit CLI argument.
+		if err != nil {
+			return nil, fmt.Errorf("open mail attachment %q: %w", path, err)
+		}
+		info, statErr := file.Stat()
+		if statErr != nil {
+			_ = file.Close()
+			return nil, fmt.Errorf("inspect mail attachment %q: %w", path, statErr)
+		}
+		if !info.Mode().IsRegular() || info.Size() < 1 || info.Size() > application.MaxMailAttachmentBytes {
+			_ = file.Close()
+			return nil, fmt.Errorf("mail attachment %q must be a regular file between 1 and %d bytes", path, application.MaxMailAttachmentBytes)
+		}
+		totalBytes += info.Size()
+		if totalBytes > application.MaxMailAttachmentTotalBytes {
+			_ = file.Close()
+			return nil, fmt.Errorf(
+				"mail attachments total %d bytes; maximum is %d",
+				totalBytes, application.MaxMailAttachmentTotalBytes,
+			)
+		}
+		content, readErr := io.ReadAll(io.LimitReader(file, application.MaxMailAttachmentBytes+1))
+		closeErr := file.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("read mail attachment %q: %w", path, readErr)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("close mail attachment %q: %w", path, closeErr)
+		}
+		contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
+		if contentType == "" {
+			contentType = http.DetectContentType(content)
+		}
+		attachments = append(attachments, application.MailFileAttachment{
+			Name: filepath.Base(path), ContentType: contentType, Content: content,
+		})
+	}
+	return attachments, nil
 }
 
 func writeMailMoveReview(
@@ -595,6 +856,19 @@ func writeMailReadStateReview(
 	return err
 }
 
+func writeMailDeleteReview(writer io.Writer, review application.MailDeleteReview, committing bool) error {
+	action := "Preview only; nothing was deleted. Rerun with --approve to permanently delete this exact version."
+	if committing {
+		action = "Permanently deleting this exact message version now; this cannot be undone in Outlook."
+	}
+	_, err := fmt.Fprintf(
+		writer, "%s\nMessage ID: %s\nChange key: %s\nDelete type: %s\n",
+		action, sanitizeCell(review.MessageID, 4096), sanitizeCell(review.ChangeKey, 4096),
+		sanitizeCell(review.DeleteType, 32),
+	)
+	return err
+}
+
 func writeMailBodyReview(writer io.Writer, messageID string, committing bool) error {
 	action := "Preview only; the private body was not read. Rerun with --approve to read this exact message."
 	if committing {
@@ -603,6 +877,18 @@ func writeMailBodyReview(writer io.Writer, messageID string, committing bool) er
 	_, err := fmt.Fprintf(
 		writer, "%s\nMessage ID: %s\n",
 		action, sanitizeCell(messageID, 4096),
+	)
+	return err
+}
+
+func writeMailAttachmentReview(writer io.Writer, attachmentID string, committing bool) error {
+	action := "Preview only; the private attachment was not read. Rerun with --approve to retrieve it."
+	if committing {
+		action = "Reading this private attachment now."
+	}
+	_, err := fmt.Fprintf(
+		writer, "%s\nAttachment ID: %s\n",
+		action, sanitizeCell(attachmentID, 4096),
 	)
 	return err
 }

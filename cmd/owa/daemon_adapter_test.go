@@ -74,6 +74,17 @@ func (backend *adapterTestBackend) CommitMailBody(context.Context, string, domai
 		Status: "completed", Body: &application.MailBody{ID: "message-1", Text: "Synthetic body"},
 	}, nil
 }
+func (*adapterTestBackend) GetMailAttachment(_ context.Context, input application.MailAttachmentInput, _ domain.Caller) (application.MailAttachmentAccess, error) {
+	return application.MailAttachmentAccess{
+		Status: "completed", Attachment: &application.MailAttachment{
+			MailAttachmentMetadata: application.MailAttachmentMetadata{ID: input.AttachmentID},
+			ContentBase64:          "Zml4dHVyZQ==",
+		},
+	}, nil
+}
+func (*adapterTestBackend) CommitMailAttachment(context.Context, string, domain.Caller) (application.MailAttachmentAccess, error) {
+	return application.MailAttachmentAccess{Status: "completed"}, nil
+}
 func (backend *adapterTestBackend) CreateMailDraft(_ context.Context, input application.MailDraftInput, _ domain.Caller) (application.MailDraftAccess, error) {
 	backend.draftReview = input.Review()
 	return application.MailDraftAccess{
@@ -126,6 +137,14 @@ func (backend *adapterTestBackend) SetMailReadState(context.Context, application
 }
 func (*adapterTestBackend) CommitMailReadState(context.Context, string, domain.Caller) (application.MailReadStateAccess, error) {
 	return application.MailReadStateAccess{}, nil
+}
+
+func (*adapterTestBackend) DeleteMail(context.Context, application.MailDeleteInput, domain.Caller) (application.MailDeleteAccess, error) {
+	return application.MailDeleteAccess{}, nil
+}
+
+func (*adapterTestBackend) CommitMailDelete(context.Context, string, domain.Caller) (application.MailDeleteAccess, error) {
+	return application.MailDeleteAccess{}, nil
 }
 func (*adapterTestBackend) ListCalendar(context.Context, application.CalendarListInput, domain.Caller) (application.CalendarPage, error) {
 	return application.CalendarPage{}, nil

@@ -35,10 +35,10 @@ safe:
 
 - Read: `FindFolder`, `FindItem`, `GetCalendarView`, and
   `GetUserAvailabilityInternal`.
-- Sensitive read: `GetItem`.
+- Sensitive read: `GetItem` and `GetAttachment`.
 - Reversible write: `MoveItem`.
-- External write: `CreateItem`, `CreateCalendarEvent`, `UpdateItem`, and
-  `UpdateCalendarEvent`.
+- External write: `CreateItem`, `CreateAttachment`, `SendItem`,
+  `CreateCalendarEvent`, `UpdateItem`, and `UpdateCalendarEvent`.
 - Destructive write: `DeleteItem`.
 
 Adding an action requires a typed request/response contract, synthetic fixture,
@@ -68,8 +68,10 @@ duplicate draft.
   the same body-free metadata schema as listing. Its per-request search-folder
   identity is random; the private query is never written to audit data. The
   CLI and MCP cannot supply an action name or arbitrary request fields.
-- `GetItem` reads a maximum 1 MiB plain-text body for one explicit message ID.
-  HTML, bulk IDs, MIME, headers, and attachment data are not requested.
+- `GetItem` reads a maximum 1 MiB plain-text body plus bounded file-attachment
+  metadata for one explicit message ID. HTML, bulk IDs, MIME, headers, and
+  attachment content are not requested. `GetAttachment` separately returns one
+  explicit file attachment up to 2 MiB; item attachments are not exposed.
 - `MoveItem` moves exactly one opaque item ID and change key to one typed
   distinguished or discovered opaque destination under the selected account.
   The response may contain one new item identity or omit it; multiple returned
@@ -84,23 +86,27 @@ duplicate draft.
   The adapter normalizes request and response times to UTC, accepts both direct
   `Body.Items` and response-message envelopes, and bounds the decoded event
   count. Bodies, attendees, attachments, and join URLs are not exposed.
-- `CreateItem` creates exactly one plain-text message in the distinguished
-  drafts folder with both disposition fields set to `SaveOnly`. Recipients are
-  bounded and validated as bare addresses by the application layer. The
-  response must contain exactly one opaque draft ID, and the request is never
-  retried.
-- `CreateItem` also sends one new plain-text composition with both disposition
-  fields set to `SendAndSaveCopy` and the distinguished Sent Items folder. The
-  application always requires an exact external-write preview and commit first.
-  A successful response may omit the sent-copy ID; more than one returned item
-  is rejected. The request is attempted once.
-- `CreateCalendarEvent` creates exactly one non-recurring, non-all-day calendar
+- `CreateItem` creates exactly one text or HTML new-message, reply, reply-all,
+  or forward in the distinguished drafts folder with both disposition fields
+  set to `SaveOnly`. Response shapes bind an exact reference item ID and change
+  key. Recipients are bounded and validated as bare addresses. A bounded
+  `CreateAttachment` batch can then add file attachments and refresh the draft
+  change key. Neither write is retried.
+- `CreateItem` also sends a reviewed composition without attachments using
+  `SendAndSaveCopy`. Compositions with attachments use `SaveOnly`, one
+  `CreateAttachment` batch, then `SendItem` for the exact refreshed draft.
+  The application always requires an exact external-write preview and commit.
+  A successful response may omit the sent-copy ID; no write is retried and any
+  partial multi-step outcome is reported conservatively.
+- `CreateCalendarEvent` creates exactly one bounded calendar
   item in the selected primary or opaque calendar. Its JSON body remains the
   closed `CreateItemRequest:#Exchange` shape, while the specialized action is
-  required for online-meeting properties. RFC3339 inputs are normalized to UTC
-  together with the request time-zone context. The item uses plain text,
-  bounded unique bare attendee addresses, `Busy` free/busy state, and an
-  enhanced plain-text location. It selects `SendToAllAndSaveCopy` only when
+  required for online-meeting properties. RFC3339 inputs use UTC by default or
+  the reviewed Exchange/Windows time-zone context. The item uses plain text,
+  optional all-day boundaries, reminders, a closed daily/weekly/
+  absolute-monthly/absolute-yearly recurrence shape, bounded unique bare
+  attendee addresses, `Busy` free/busy state, and an enhanced plain-text
+  location. It selects `SendToAllAndSaveCopy` only when
   attendees are present and `SendToNone` otherwise. A reviewed
   `teamsMeeting=true` adds only `IsOnlineMeeting=true` and the closed
   `TeamsForBusiness` provider; the single-event commit result may include the
@@ -109,18 +115,26 @@ duplicate draft.
   contain exactly one event ID, and submission is never retried.
 - `UpdateCalendarEvent` applies a fixed set of calendar `SetItemField` values to
   one exact event ID and change key: subject, plain-text body, start plus end,
-  `StartTimeZoneId` plus `EndTimeZoneId`, and enhanced `Locations`. The request
+  time-zone IDs, enhanced locations, all-day status, reminder, and complete
+  required/optional attendee replacement. The request
   repeats the exact identity in `EventId` and `ItemChange.ItemId`, uses the
   default event scope, and requires exactly one updated item in a successful
   response. Empty strings are explicit clears; omitted fields remain unchanged.
   Attendee notification follows OWA's calendar policy and may occur for meeting
-  changes. Attendee membership, recurrence, reminders, arbitrary field URIs,
-  and batches are not exposed.
+  changes. Recurrence editing, arbitrary field URIs, and batches are not
+  exposed.
 - `DeleteItem` cancels one exact event ID and change key with
   `MoveToDeletedItems` and `SendToAllAndSaveCopy`. The application classifies it
   as destructive and always requires a caller-bound preview/commit. A response
   must contain exactly one successful result. The request is attempted once and
   an ambiguous result must be reconciled against Calendar and Deleted Items.
+- `DeleteItem` also performs a separate reviewed `HardDelete` for one exact
+  message ID and change key. It suppresses receipts, never retries, and cannot
+  be mistaken for the reversible `MoveItem` flow.
+
+Explicit shared/delegated mailbox aliases add bounded `X-AnchorMailbox` and
+`X-OWA-ExplicitLogonUser` headers only after browser authorization is applied.
+They do not alter the exact configured origin or grant mailbox permissions.
 
 ## Compatibility workflow
 

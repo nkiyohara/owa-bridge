@@ -2,7 +2,9 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -11,11 +13,26 @@ import (
 	"github.com/nkiyohara/owa-bridge/internal/domain"
 )
 
+func TestDecodeMailAttachmentsRejectsAggregateBeforeApplicationUse(t *testing.T) {
+	t.Parallel()
+
+	chunk := strings.Repeat("x", application.MaxMailAttachmentTotalBytes/2+1)
+	encoded := base64.StdEncoding.EncodeToString([]byte(chunk))
+	_, err := decodeMailAttachments([]MailFileAttachmentInput{
+		{Name: "one.bin", ContentBase64: encoded},
+		{Name: "two.bin", ContentBase64: encoded},
+	})
+	if err == nil {
+		t.Fatal("decodeMailAttachments() accepted an oversized aggregate")
+	}
+}
+
 type fakeBackend struct {
 	mailInput            application.MailListInput
 	searchInput          application.MailSearchInput
 	folderInput          application.MailFolderListInput
 	bodyInput            application.MailBodyInput
+	attachmentInput      application.MailAttachmentInput
 	approvalToken        string
 	calendarInput        application.CalendarListInput
 	calendarCreate       application.CalendarCreateInput
@@ -25,6 +42,7 @@ type fakeBackend struct {
 	mailPage             application.MailPage
 	folderPage           application.MailFolderPage
 	bodyAccess           application.MailBodyAccess
+	attachmentAccess     application.MailAttachmentAccess
 	draftInput           application.MailDraftInput
 	draftAccess          application.MailDraftAccess
 	sendInput            application.MailSendInput
@@ -162,6 +180,26 @@ func (backend *fakeBackend) CommitMailBody(
 	return backend.bodyAccess, backend.err
 }
 
+func (backend *fakeBackend) GetMailAttachment(
+	_ context.Context,
+	input application.MailAttachmentInput,
+	caller domain.Caller,
+) (application.MailAttachmentAccess, error) {
+	backend.caller = caller
+	backend.attachmentInput = input
+	return backend.attachmentAccess, backend.err
+}
+
+func (backend *fakeBackend) CommitMailAttachment(
+	_ context.Context,
+	token string,
+	caller domain.Caller,
+) (application.MailAttachmentAccess, error) {
+	backend.caller = caller
+	backend.approvalToken = token
+	return backend.attachmentAccess, backend.err
+}
+
 func (backend *fakeBackend) CreateMailDraft(
 	_ context.Context,
 	input application.MailDraftInput,
@@ -242,6 +280,18 @@ func (backend *fakeBackend) CommitMailReadState(
 	return backend.readStateAccess, backend.err
 }
 
+func (backend *fakeBackend) DeleteMail(
+	_ context.Context, input application.MailDeleteInput, _ domain.Caller,
+) (application.MailDeleteAccess, error) {
+	return application.MailDeleteAccess{Review: input.Review()}, nil
+}
+
+func (backend *fakeBackend) CommitMailDelete(
+	context.Context, string, domain.Caller,
+) (application.MailDeleteAccess, error) {
+	return application.MailDeleteAccess{}, nil
+}
+
 func TestMailListToolUsesDefaultsAndReturnsStructuredOutput(t *testing.T) {
 	t.Parallel()
 
@@ -272,7 +322,7 @@ func TestMailListToolUsesDefaultsAndReturnsStructuredOutput(t *testing.T) {
 		t.Fatalf("ListTools() error = %v", err)
 	}
 	mailTool := toolNamed(tools.Tools, "mail_list")
-	if len(tools.Tools) != 20 || mailTool == nil {
+	if len(tools.Tools) != 24 || mailTool == nil {
 		t.Fatalf("unexpected tools: %+v", tools.Tools)
 	}
 	annotation := mailTool.Annotations
@@ -505,6 +555,15 @@ func TestCalendarCreateToolsKeepMandatoryPreviewAndCommitSeparate(t *testing.T) 
 			"requiredAttendees": []string{"alice@example.invalid"},
 			"optionalAttendees": []string{"bob@example.invalid"},
 			"teamsMeeting":      true,
+			"allDay":            true,
+			"timeZone":          "GMT Standard Time",
+			"reminder": map[string]any{
+				"enabled": true, "minutesBeforeStart": 30,
+			},
+			"recurrence": map[string]any{
+				"pattern": "weekly", "interval": 1,
+				"daysOfWeek": []string{"Monday"}, "numberOfOccurrences": 4,
+			},
 		},
 	})
 	if err != nil || result.IsError {
@@ -512,7 +571,9 @@ func TestCalendarCreateToolsKeepMandatoryPreviewAndCommitSeparate(t *testing.T) 
 	}
 	if backend.calendarCreate.Account != "work" || backend.calendarCreate.Calendar.ID != "calendar" ||
 		backend.calendarCreate.Subject != "Synthetic event" || len(backend.calendarCreate.RequiredAttendees) != 1 ||
-		len(backend.calendarCreate.OptionalAttendees) != 1 || !backend.calendarCreate.TeamsMeeting {
+		len(backend.calendarCreate.OptionalAttendees) != 1 || !backend.calendarCreate.TeamsMeeting ||
+		!backend.calendarCreate.AllDay || backend.calendarCreate.TimeZone != "GMT Standard Time" ||
+		backend.calendarCreate.Reminder == nil || backend.calendarCreate.Recurrence == nil {
 		t.Fatalf("unexpected calendar create input: %+v", backend.calendarCreate)
 	}
 	result, err = clientSession.CallTool(t.Context(), &mcp.CallToolParams{
@@ -550,6 +611,10 @@ func TestCalendarUpdateToolsExposeOnlyClosedVersionedPatch(t *testing.T) {
 			"eventId": "event-1", "changeKey": "change-1",
 			"subject": "Updated synthetic event", "location": "",
 			"start": "2026-07-20T09:00:00Z", "end": "2026-07-20T10:00:00Z",
+			"timeZone": "UTC", "allDay": false,
+			"reminder":          map[string]any{"enabled": true, "minutesBeforeStart": 10},
+			"replaceAttendees":  true,
+			"requiredAttendees": []string{"alice@example.invalid"},
 		},
 	})
 	if err != nil || result.IsError {
@@ -558,7 +623,10 @@ func TestCalendarUpdateToolsExposeOnlyClosedVersionedPatch(t *testing.T) {
 	if backend.calendarUpdate.Account != "work" || backend.calendarUpdate.EventID != "event-1" ||
 		backend.calendarUpdate.Subject == nil || *backend.calendarUpdate.Subject != "Updated synthetic event" ||
 		backend.calendarUpdate.Location == nil || *backend.calendarUpdate.Location != "" ||
-		backend.calendarUpdate.Start == nil || backend.calendarUpdate.End == nil {
+		backend.calendarUpdate.Start == nil || backend.calendarUpdate.End == nil ||
+		backend.calendarUpdate.TimeZone == nil || backend.calendarUpdate.AllDay == nil ||
+		backend.calendarUpdate.Reminder == nil || !backend.calendarUpdate.ReplaceAttendees ||
+		len(backend.calendarUpdate.RequiredAttendees) != 1 {
 		t.Fatalf("unexpected calendar update input: %+v", backend.calendarUpdate)
 	}
 	result, err = clientSession.CallTool(t.Context(), &mcp.CallToolParams{
@@ -647,6 +715,40 @@ func TestMailBodyToolsKeepPreviewAndCommitSeparate(t *testing.T) {
 	}
 }
 
+func TestMailAttachmentToolsUseBoundedSensitiveRead(t *testing.T) {
+	t.Parallel()
+
+	attachment := application.MailAttachment{
+		MailAttachmentMetadata: application.MailAttachmentMetadata{ID: "attachment-1", Name: "fixture.txt"},
+		ContentBase64:          "Zml4dHVyZQ==",
+	}
+	backend := &fakeBackend{attachmentAccess: application.MailAttachmentAccess{
+		Status: "completed", Attachment: &attachment,
+	}}
+	server, err := New(backend, Options{Version: "dev", Instance: "test-server"})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	clientSession := connectTestClient(t, server)
+	tools, err := clientSession.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("ListTools() error = %v", err)
+	}
+	for _, name := range []string{"mail_get_attachment", "mail_get_attachment_commit"} {
+		tool := toolNamed(tools.Tools, name)
+		if tool == nil || tool.Annotations == nil || !tool.Annotations.ReadOnlyHint ||
+			tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint {
+			t.Fatalf("unsafe attachment tool %s: %+v", name, tool)
+		}
+	}
+	result, err := clientSession.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "mail_get_attachment", Arguments: map[string]any{"attachmentId": "attachment-1"},
+	})
+	if err != nil || result.IsError || backend.attachmentInput.AttachmentID != "attachment-1" {
+		t.Fatalf("mail_get_attachment failed: result=%+v input=%+v error=%v", result, backend.attachmentInput, err)
+	}
+}
+
 func TestMailDraftToolsAreSaveOnlyWrites(t *testing.T) {
 	t.Parallel()
 
@@ -706,13 +808,18 @@ func TestMailSendToolsRequireSeparateExternalCommit(t *testing.T) {
 	result, err := clientSession.CallTool(t.Context(), &mcp.CallToolParams{
 		Name: "mail_send",
 		Arguments: map[string]any{
-			"to": []string{"alice@example.invalid"}, "subject": "Send", "body": "Hello",
+			"to": []string{"alice@example.invalid"}, "subject": "Send", "body": "<p>Hello</p>",
+			"bodyFormat": "html", "attachments": []map[string]any{{
+				"name": "fixture.txt", "contentType": "text/plain", "contentBase64": "Zml4dHVyZQ==",
+			}},
 		},
 	})
 	if err != nil || result.IsError {
 		t.Fatalf("mail_send failed: result=%+v error=%v", result, err)
 	}
-	if backend.sendInput.Account != "work" || backend.sendInput.Subject != "Send" {
+	if backend.sendInput.Account != "work" || backend.sendInput.Subject != "Send" ||
+		backend.sendInput.BodyFormat != application.MailBodyHTML || len(backend.sendInput.Attachments) != 1 ||
+		string(backend.sendInput.Attachments[0].Content) != "fixture" {
 		t.Fatalf("unexpected send input: %+v", backend.sendInput)
 	}
 	result, err = clientSession.CallTool(t.Context(), &mcp.CallToolParams{
