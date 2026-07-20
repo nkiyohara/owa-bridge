@@ -34,7 +34,7 @@ func TestRenderBindsCatalogsToChecksums(t *testing.T) {
 		"owa-bridge_1.2.3_source.tar.gz",
 		strings.Repeat("a", 64),
 		`depends_on "go" => :build`,
-		`"go", "build", "-mod=vendor"`,
+		`std_go_args(output: bin/"owa"`,
 		`man1.install "manpages/owa.1"`,
 	} {
 		if !strings.Contains(formula, want) {

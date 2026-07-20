@@ -210,7 +210,9 @@ func renderFormula(release metadata, hashes map[string]string) (string, error) {
       -X github.com/nkiyohara/owa-bridge/internal/buildinfo.commit=%s
       -X github.com/nkiyohara/owa-bridge/internal/buildinfo.buildDate=%s
     ]
-    system "go", "build", "-mod=vendor", *std_go_args(ldflags: ldflags.join(" ")), "./cmd/owa"
+    system "go", "build", "-mod=vendor",
+           *std_go_args(output: bin/"owa", ldflags: ldflags.join(" ")),
+           "./cmd/owa"
 
     man1.install "manpages/owa.1"
     bash_completion.install "completions/owa.bash" => "owa"
