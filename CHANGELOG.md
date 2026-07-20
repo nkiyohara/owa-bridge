@@ -3,6 +3,13 @@
 All notable user-facing changes are recorded here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.2 - 2026-07-20
+
+### Homebrew
+
+- Install the compiled executable as `owa` instead of inheriting the Formula
+  name as the Go build output.
+
 ## 0.3.1 - 2026-07-20
 
 ### Package catalogs

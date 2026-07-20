@@ -485,7 +485,7 @@ func verifyCatalogs(dist string, hashes map[string]string) error {
 	}
 	for _, snippet := range []string{
 		`depends_on "go" => :build`,
-		`system "go", "build", "-mod=vendor"`,
+		`std_go_args(output: bin/"owa"`,
 		`bash_completion.install "completions/owa.bash" => "owa"`,
 		`zsh_completion.install "completions/_owa"`,
 		`fish_completion.install "completions/owa.fish"`,
