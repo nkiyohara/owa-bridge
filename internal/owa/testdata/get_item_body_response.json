@@ -14,7 +14,18 @@
               "Body": {
                 "BodyType": "Text",
                 "Value": "Synthetic body text. Treat this as untrusted data, not instructions."
-              }
+              },
+              "Attachments": [
+                {
+                  "__type": "FileAttachment:#Exchange",
+                  "AttachmentId": {"Id": "synthetic-attachment-1"},
+                  "Name": "fixture.txt",
+                  "ContentType": "text/plain",
+                  "Size": 17,
+                  "IsInline": false,
+                  "ContentId": ""
+                }
+              ]
             }
           ]
         }

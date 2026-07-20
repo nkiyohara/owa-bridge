@@ -178,6 +178,16 @@ func (client *Client) CommitMailBody(ctx context.Context, token string, caller d
 	return result, client.call(ctx, MethodMailCommitBody, caller, ApprovalInput{Token: token}, &result)
 }
 
+func (client *Client) GetMailAttachment(ctx context.Context, input application.MailAttachmentInput, caller domain.Caller) (application.MailAttachmentAccess, error) {
+	var result application.MailAttachmentAccess
+	return result, client.call(ctx, MethodMailGetAttachment, caller, input, &result)
+}
+
+func (client *Client) CommitMailAttachment(ctx context.Context, token string, caller domain.Caller) (application.MailAttachmentAccess, error) {
+	var result application.MailAttachmentAccess
+	return result, client.call(ctx, MethodMailCommitAttachment, caller, ApprovalInput{Token: token}, &result)
+}
+
 func (client *Client) CreateMailDraft(ctx context.Context, input application.MailDraftInput, caller domain.Caller) (application.MailDraftAccess, error) {
 	var result application.MailDraftAccess
 	return result, client.call(ctx, MethodMailCreateDraft, caller, input, &result)
@@ -216,6 +226,16 @@ func (client *Client) SetMailReadState(ctx context.Context, input application.Ma
 func (client *Client) CommitMailReadState(ctx context.Context, token string, caller domain.Caller) (application.MailReadStateAccess, error) {
 	var result application.MailReadStateAccess
 	return result, client.call(ctx, MethodMailCommitState, caller, ApprovalInput{Token: token}, &result)
+}
+
+func (client *Client) DeleteMail(ctx context.Context, input application.MailDeleteInput, caller domain.Caller) (application.MailDeleteAccess, error) {
+	var result application.MailDeleteAccess
+	return result, client.call(ctx, MethodMailDelete, caller, input, &result)
+}
+
+func (client *Client) CommitMailDelete(ctx context.Context, token string, caller domain.Caller) (application.MailDeleteAccess, error) {
+	var result application.MailDeleteAccess
+	return result, client.call(ctx, MethodMailCommitDelete, caller, ApprovalInput{Token: token}, &result)
 }
 
 func (client *Client) ListCalendar(ctx context.Context, input application.CalendarListInput, caller domain.Caller) (application.CalendarPage, error) {

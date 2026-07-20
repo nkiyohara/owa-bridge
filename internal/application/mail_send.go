@@ -10,15 +10,20 @@ import (
 	"github.com/nkiyohara/owa-bridge/internal/policy"
 )
 
-// MailSendInput is one new plain-text message. Sending always requires an
+// MailSendInput is one new message or response. Sending always requires an
 // exact preview, regardless of configurable read/reversible-write preferences.
 type MailSendInput struct {
-	Account domain.AccountID `json:"account"`
-	To      []string         `json:"to,omitempty"`
-	CC      []string         `json:"cc,omitempty"`
-	BCC     []string         `json:"bcc,omitempty"`
-	Subject string           `json:"subject,omitempty"`
-	Body    string           `json:"body,omitempty"`
+	Account            domain.AccountID     `json:"account"`
+	To                 []string             `json:"to,omitempty"`
+	CC                 []string             `json:"cc,omitempty"`
+	BCC                []string             `json:"bcc,omitempty"`
+	Subject            string               `json:"subject,omitempty"`
+	Body               string               `json:"body,omitempty"`
+	BodyFormat         MailBodyFormat       `json:"bodyFormat,omitempty"`
+	ComposeMode        MailComposeMode      `json:"composeMode,omitempty"`
+	ReferenceMessageID string               `json:"referenceMessageId,omitempty"`
+	ReferenceChangeKey string               `json:"referenceChangeKey,omitempty"`
+	Attachments        []MailFileAttachment `json:"attachments,omitempty"`
 }
 
 // MailSendResult identifies a sent copy only when OWA returns an item ID.
@@ -135,7 +140,7 @@ func (input MailSendInput) Validate(maxRecipients int) error {
 	if err := composition.Validate(maxRecipients); err != nil {
 		return err
 	}
-	if len(input.To)+len(input.CC)+len(input.BCC) == 0 {
+	if composition.EffectiveComposeMode() == MailComposeNew && len(input.To)+len(input.CC)+len(input.BCC) == 0 {
 		return errors.New("mail send requires at least one recipient")
 	}
 	return nil
@@ -145,5 +150,11 @@ func (input MailSendInput) Validate(maxRecipients int) error {
 func (input MailSendInput) Review() MailReview { return input.asDraftInput().Review() }
 
 func (input MailSendInput) asDraftInput() MailDraftInput {
-	return MailDraftInput(input)
+	return MailDraftInput{
+		Account: input.Account, To: input.To, CC: input.CC, BCC: input.BCC,
+		Subject: input.Subject, Body: input.Body, BodyFormat: input.BodyFormat,
+		ComposeMode: input.ComposeMode, ReferenceMessageID: input.ReferenceMessageID,
+		ReferenceChangeKey: input.ReferenceChangeKey,
+		Attachments:        append([]MailFileAttachment(nil), input.Attachments...),
+	}
 }

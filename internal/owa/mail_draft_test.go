@@ -27,6 +27,25 @@ func TestCreateDraftRequestMatchesGoldenFixture(t *testing.T) {
 	assertJSONEqual(t, actual, want)
 }
 
+func TestCreateDraftBuildsHTMLReplyAllContract(t *testing.T) {
+	t.Parallel()
+
+	input := application.MailDraftInput{
+		Account: "work", Body: "<p>Synthetic reply</p>", BodyFormat: application.MailBodyHTML,
+		ComposeMode:        application.MailComposeReplyAll,
+		ReferenceMessageID: "message-1", ReferenceChangeKey: "change-1",
+	}
+	payload := buildCreateDraftEnvelope(input)
+	if payload.Body.ComposeOperation != "replyAll" {
+		t.Fatalf("compose operation = %q", payload.Body.ComposeOperation)
+	}
+	item, ok := payload.Body.Items[0].(responseMessage)
+	if !ok || item.Type != "ReplyAllToItem:#Exchange" || item.NewBodyContent.BodyType != "HTML" ||
+		item.ReferenceItemID.ID != "message-1" || item.ReferenceItemID.ChangeKey != "change-1" {
+		t.Fatalf("unexpected reply item: %+v", payload.Body.Items[0])
+	}
+}
+
 func TestCreateMailDraftNormalizesResponseAndNeverRetries(t *testing.T) {
 	t.Parallel()
 

@@ -3,6 +3,43 @@
 All notable user-facing changes are recorded here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.0 - 2026-07-20
+
+### Mail composition and attachments
+
+- Add reviewed reply, reply-all, and forward composition for drafts and sends,
+  with exact source message IDs and change keys.
+- Add text or HTML bodies plus bounded file attachments whose sizes and SHA-256
+  digests are visible in the review.
+- Return bounded attachment metadata with body reads and retrieve one explicit
+  file attachment through a separate sensitive-read tool.
+- Add mandatory destructive preview and commit for one exact message hard
+  delete.
+
+### Calendar fields
+
+- Add all-day creation, explicit Exchange/Windows time-zone IDs, reminders,
+  and bounded daily, weekly, absolute-monthly, and absolute-yearly recurrence.
+- Add versioned updates for all-day status, reminders, and complete required/
+  optional attendee-list replacement.
+
+### Mailbox routing and public documentation
+
+- Add explicit shared/delegated mailbox aliases for mailboxes the interactive
+  Outlook Web user is already authorized to access.
+- Advance local IPC to protocol version 10 and expand the MCP surface to 24
+  typed tools.
+- Clarify on GitHub Pages and in the README that owa-bridge is a local Outlook
+  MCP that does not require a Microsoft Graph app registration or hosted relay.
+
+### Compatibility limits
+
+- Keep new OWA contracts marked deterministic-only until a separately
+  authorized live observation is recorded.
+- Continue to omit Inbox-rule mutation because Exchange warns that updating
+  rules can remove client-only rules, as well as recurrence editing,
+  delegate-permission management, and generic property mutation.
+
 ## 0.2.0 - 2026-07-19
 
 ### Authentication

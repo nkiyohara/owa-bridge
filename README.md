@@ -2,9 +2,10 @@
 
 Local-first Outlook Web mail and calendar for humans, scripts, and AI agents.
 
-`owa-bridge` is a cross-platform CLI, local session owner, and MCP server that
-works through the interactive Outlook Web session you already use. It is built
-for environments where Microsoft Graph application access is unavailable.
+`owa-bridge` is a cross-platform CLI and Outlook MCP server that works locally
+through the interactive Outlook Web session you already use—without a
+Microsoft Graph app registration, hosted bridge, or captured password. It is
+built for environments where Graph application access is unavailable.
 
 [Website](https://nkiyohara.github.io/owa-bridge/) ·
 [Latest release](https://github.com/nkiyohara/owa-bridge/releases/latest) ·
@@ -12,7 +13,7 @@ for environments where Microsoft Graph application access is unavailable.
 [JSON contract](docs/json.md)
 
 > [!WARNING]
-> `owa-bridge` 0.2 is an early release over undocumented Outlook Web contracts.
+> `owa-bridge` 0.3 is an early release over undocumented Outlook Web contracts.
 > Use only an account you are authorized to access, review every write, and
 > keep Outlook available for reconciliation after an unknown outcome.
 
@@ -116,7 +117,7 @@ owa mcp setup claude-code
 claude mcp get owa
 ```
 
-The MCP server exposes twenty narrow mail and calendar tools. Descriptions and
+The MCP server exposes 24 narrow mail and calendar tools. Descriptions and
 annotations identify private untrusted content, side effects, and destructive
 commits; application policy still enforces every operation. Read the
 [MCP guide](docs/mcp.md) and [JSON contract](docs/json.md) for the complete
@@ -125,19 +126,23 @@ agent-facing surface.
 ## Current scope
 
 Mail supports folder discovery, metadata list and AQS search, one explicit
-plain-text body read, save-only drafts, new-message sending, versioned moves,
-and read/unread updates.
+plain-text body read with attachment metadata, bounded attachment retrieval,
+text or HTML drafts and sends, reply/reply-all/forward, bounded file
+attachments, versioned moves, read/unread updates, and reviewed permanent
+deletion.
 
-Calendar supports bounded metadata list, non-recurring event creation with
-required and optional attendees, optional Teams join-link provisioning,
-versioned subject/body/time/location updates, and cancellation to Deleted
-Items.
+Calendar supports bounded metadata list, event creation with all-day,
+reminder, recurrence, required and optional attendee, and optional Teams-link
+settings. Versioned updates cover subject/body/time/location, all-day status,
+reminders, and complete attendee replacement; cancellation moves an event to
+Deleted Items.
 
-Reply, forward, HTML composition, attachments, permanent deletion, recurrence
-editing, reminders, attendee replacement, and generic property mutation are
-not implemented. General Teams chat, channels, calls, recordings, and meeting
-lifecycle management are out of scope, as are Microsoft Graph, hosted relays,
-unattended login, and tenant-wide access.
+Explicit shared/delegated mailbox routing is available when the signed-in user
+already has access in Outlook Web. Mailbox-rule mutation, recurrence editing
+after creation, generic property mutation, and delegate-permission management
+are not implemented. General Teams chat, channels, calls, recordings, and
+meeting lifecycle management remain out of scope, as do Microsoft Graph,
+hosted relays, unattended login, and tenant-wide access.
 
 ## Distribution
 

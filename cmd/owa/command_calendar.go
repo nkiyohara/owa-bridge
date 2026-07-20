@@ -12,7 +12,7 @@ import (
 
 type calendarCommand struct {
 	List   calendarListCommand   `cmd:"" help:"List event metadata in an absolute time window."`
-	Create calendarCreateCommand `cmd:"" help:"Review and create one plain-text calendar event."`
+	Create calendarCreateCommand `cmd:"" help:"Review and create one typed calendar event."`
 	Update calendarUpdateCommand `cmd:"" help:"Review a versioned event field update."`
 	Cancel calendarCancelCommand `cmd:"" help:"Review and cancel one versioned event."`
 }
@@ -26,34 +26,51 @@ type calendarListCommand struct {
 }
 
 type calendarCreateCommand struct {
-	Account           string   `help:"Configured account alias; defaults to default_account."`
-	CalendarID        string   `name:"calendar-id" help:"Opaque calendar ID; defaults to the primary calendar."`
-	Subject           string   `help:"Event subject; CR/LF are rejected."`
-	BodyFile          string   `name:"body-file" help:"Plain-text body file, or - for stdin."`
-	Start             string   `help:"RFC3339 event start (required)."`
-	End               string   `help:"RFC3339 event end, at most 31 days later (required)."`
-	Location          string   `help:"Plain-text location; CR/LF are rejected."`
-	RequiredAttendees []string `name:"required-attendee" help:"Bare required attendee address; repeat as needed."`
-	OptionalAttendees []string `name:"optional-attendee" help:"Bare optional attendee address; repeat as needed."`
-	TeamsMeeting      bool     `name:"teams-meeting" help:"Create a Microsoft Teams online meeting link."`
-	Approve           bool     `help:"Create the exact preview generated from these arguments."`
-	JSON              bool     `help:"Write the stable machine-readable schema."`
+	Account              string   `help:"Configured account alias; defaults to default_account."`
+	CalendarID           string   `name:"calendar-id" help:"Opaque calendar ID; defaults to the primary calendar."`
+	Subject              string   `help:"Event subject; CR/LF are rejected."`
+	BodyFile             string   `name:"body-file" help:"Plain-text body file, or - for stdin."`
+	Start                string   `help:"RFC3339 event start (required)."`
+	End                  string   `help:"RFC3339 event end, at most 31 days later (required)."`
+	Location             string   `help:"Plain-text location; CR/LF are rejected."`
+	RequiredAttendees    []string `name:"required-attendee" help:"Bare required attendee address; repeat as needed."`
+	OptionalAttendees    []string `name:"optional-attendee" help:"Bare optional attendee address; repeat as needed."`
+	TeamsMeeting         bool     `name:"teams-meeting" help:"Create a Microsoft Teams online meeting link."`
+	AllDay               bool     `name:"all-day" help:"Create an all-day event; start and end must be midnight in the reviewed time zone."`
+	TimeZone             string   `name:"time-zone" help:"Exchange/Windows time-zone ID; defaults to UTC."`
+	ReminderMinutes      *int     `name:"reminder-minutes" help:"Enable a reminder this many minutes before start; omit to disable."`
+	Recurrence           string   `enum:"none,daily,weekly,monthly,yearly" default:"none" help:"Recurrence pattern."`
+	RecurrenceInterval   int      `name:"recurrence-interval" default:"1" help:"Recurrence interval."`
+	RecurrenceDay        []string `name:"recurrence-day" help:"Weekly weekday (for example Monday); repeat as needed."`
+	RecurrenceDayOfMonth int      `name:"recurrence-day-of-month" help:"Monthly or yearly day of month."`
+	RecurrenceMonth      string   `name:"recurrence-month" help:"Yearly month (for example January)."`
+	RecurrenceEndDate    string   `name:"recurrence-end-date" help:"Inclusive YYYY-MM-DD recurrence end; mutually exclusive with count."`
+	RecurrenceCount      int      `name:"recurrence-count" help:"Number of occurrences; mutually exclusive with end date."`
+	Approve              bool     `help:"Create the exact preview generated from these arguments."`
+	JSON                 bool     `help:"Write the stable machine-readable schema."`
 }
 
 type calendarUpdateCommand struct {
-	Account       string `help:"Configured account alias; defaults to default_account."`
-	EventID       string `name:"event-id" help:"Exact event ID returned by calendar list (required)."`
-	ChangeKey     string `name:"change-key" help:"Exact change key returned with the event ID (required)."`
-	Subject       string `help:"Non-empty replacement subject; use clear-subject to clear."`
-	ClearSubject  bool   `name:"clear-subject" help:"Clear the event subject."`
-	BodyFile      string `name:"body-file" help:"Replacement plain-text body file, or - for stdin."`
-	ClearBody     bool   `name:"clear-body" help:"Clear the event body."`
-	Start         string `help:"Replacement RFC3339 start; requires end."`
-	End           string `help:"Replacement RFC3339 end; requires start."`
-	Location      string `help:"Non-empty replacement location; use clear-location to clear."`
-	ClearLocation bool   `name:"clear-location" help:"Clear the event location."`
-	Approve       bool   `help:"Apply the exact preview generated from these arguments."`
-	JSON          bool   `help:"Write the stable machine-readable schema."`
+	Account           string   `help:"Configured account alias; defaults to default_account."`
+	EventID           string   `name:"event-id" help:"Exact event ID returned by calendar list (required)."`
+	ChangeKey         string   `name:"change-key" help:"Exact change key returned with the event ID (required)."`
+	Subject           string   `help:"Non-empty replacement subject; use clear-subject to clear."`
+	ClearSubject      bool     `name:"clear-subject" help:"Clear the event subject."`
+	BodyFile          string   `name:"body-file" help:"Replacement plain-text body file, or - for stdin."`
+	ClearBody         bool     `name:"clear-body" help:"Clear the event body."`
+	Start             string   `help:"Replacement RFC3339 start; requires end."`
+	End               string   `help:"Replacement RFC3339 end; requires start."`
+	TimeZone          string   `name:"time-zone" help:"Replacement Exchange/Windows time-zone ID; requires start and end."`
+	Location          string   `help:"Non-empty replacement location; use clear-location to clear."`
+	ClearLocation     bool     `name:"clear-location" help:"Clear the event location."`
+	AllDay            string   `name:"all-day" enum:"unchanged,true,false" default:"unchanged" help:"Set or clear all-day status."`
+	ReminderMinutes   *int     `name:"reminder-minutes" help:"Enable or replace a reminder this many minutes before start."`
+	DisableReminder   bool     `name:"disable-reminder" help:"Disable the event reminder."`
+	ReplaceAttendees  bool     `name:"replace-attendees" help:"Replace both attendee lists, including clearing them when no addresses are supplied."`
+	RequiredAttendees []string `name:"required-attendee" help:"Replacement required attendee address; repeat as needed."`
+	OptionalAttendees []string `name:"optional-attendee" help:"Replacement optional attendee address; repeat as needed."`
+	Approve           bool     `help:"Apply the exact preview generated from these arguments."`
+	JSON              bool     `help:"Write the stable machine-readable schema."`
 }
 
 type calendarCancelCommand struct {
@@ -127,6 +144,16 @@ func (command *calendarCreateCommand) Run(app *runtime) (returnErr error) {
 	if command.CalendarID != "" {
 		calendar = application.CalendarFolder{Kind: application.CalendarFolderOpaque, ID: command.CalendarID}
 	}
+	recurrence, err := command.calendarRecurrence()
+	if err != nil {
+		return err
+	}
+	var reminder *application.CalendarReminder
+	if command.ReminderMinutes != nil {
+		reminder = &application.CalendarReminder{
+			Enabled: true, MinutesBeforeStart: *command.ReminderMinutes,
+		}
+	}
 	input := application.CalendarCreateInput{
 		Account: accountID, Calendar: calendar,
 		Subject: command.Subject, Body: body,
@@ -134,6 +161,8 @@ func (command *calendarCreateCommand) Run(app *runtime) (returnErr error) {
 		RequiredAttendees: command.RequiredAttendees,
 		OptionalAttendees: command.OptionalAttendees,
 		TeamsMeeting:      command.TeamsMeeting,
+		AllDay:            command.AllDay, TimeZone: command.TimeZone,
+		Reminder: reminder, Recurrence: recurrence,
 	}
 	if err := input.Validate(configuration.Policy.MaxAttendees); err != nil {
 		return err
@@ -204,6 +233,9 @@ func (command *calendarUpdateCommand) Run(app *runtime) (returnErr error) {
 	if command.ClearLocation && command.Location != "" {
 		return errors.New("location and clear-location are mutually exclusive")
 	}
+	if command.DisableReminder && command.ReminderMinutes != nil {
+		return errors.New("reminder-minutes and disable-reminder are mutually exclusive")
+	}
 	input := application.CalendarUpdateInput{
 		Account: accountID, EventID: command.EventID, ChangeKey: command.ChangeKey,
 	}
@@ -227,10 +259,27 @@ func (command *calendarUpdateCommand) Run(app *runtime) (returnErr error) {
 	if command.End != "" {
 		input.End = stringValuePointer(command.End)
 	}
+	if command.TimeZone != "" {
+		input.TimeZone = stringValuePointer(command.TimeZone)
+	}
 	if command.Location != "" || command.ClearLocation {
 		input.Location = stringValuePointer(command.Location)
 	}
-	if err := input.Validate(); err != nil {
+	if command.AllDay != "" && command.AllDay != "unchanged" {
+		value := command.AllDay == "true"
+		input.AllDay = &value
+	}
+	if command.ReminderMinutes != nil {
+		input.Reminder = &application.CalendarReminder{
+			Enabled: true, MinutesBeforeStart: *command.ReminderMinutes,
+		}
+	} else if command.DisableReminder {
+		input.Reminder = &application.CalendarReminder{}
+	}
+	input.ReplaceAttendees = command.ReplaceAttendees
+	input.RequiredAttendees = command.RequiredAttendees
+	input.OptionalAttendees = command.OptionalAttendees
+	if err := input.ValidateWithAttendeeLimit(configuration.Policy.MaxAttendees); err != nil {
 		return err
 	}
 
@@ -332,6 +381,28 @@ func (command *calendarCancelCommand) Run(app *runtime) (returnErr error) {
 
 func stringValuePointer(value string) *string { return &value }
 
+func (command calendarCreateCommand) calendarRecurrence() (*application.CalendarRecurrence, error) {
+	if command.Recurrence == "" || command.Recurrence == "none" {
+		if len(command.RecurrenceDay) != 0 || command.RecurrenceDayOfMonth != 0 ||
+			command.RecurrenceMonth != "" || command.RecurrenceEndDate != "" || command.RecurrenceCount != 0 {
+			return nil, errors.New("recurrence details require a recurrence pattern")
+		}
+		return nil, nil
+	}
+	patterns := map[string]application.CalendarRecurrencePattern{
+		"daily":   application.CalendarRecurrenceDaily,
+		"weekly":  application.CalendarRecurrenceWeekly,
+		"monthly": application.CalendarRecurrenceAbsoluteMonthly,
+		"yearly":  application.CalendarRecurrenceAbsoluteYearly,
+	}
+	return &application.CalendarRecurrence{
+		Pattern: patterns[command.Recurrence], Interval: command.RecurrenceInterval,
+		DaysOfWeek: command.RecurrenceDay, DayOfMonth: command.RecurrenceDayOfMonth,
+		Month: command.RecurrenceMonth, EndDate: command.RecurrenceEndDate,
+		NumberOfOccurrences: command.RecurrenceCount,
+	}, nil
+}
+
 func writeCalendarCreateReview(
 	writer io.Writer,
 	review application.CalendarCreateReview,
@@ -353,13 +424,34 @@ func writeCalendarCreateReview(
 	if review.TeamsMeeting {
 		teamsMeeting = "yes"
 	}
+	allDay := "no"
+	if review.AllDay {
+		allDay = "yes"
+	}
+	reminder := "disabled"
+	if review.Reminder != nil && review.Reminder.Enabled {
+		reminder = fmt.Sprintf("%d minutes before start", review.Reminder.MinutesBeforeStart)
+	}
+	recurrence := "none"
+	if review.Recurrence != nil {
+		recurrence = string(review.Recurrence.Pattern)
+		if review.Recurrence.EndDate != "" {
+			recurrence += " through " + review.Recurrence.EndDate
+		} else {
+			recurrence += fmt.Sprintf(" for %d occurrences", review.Recurrence.NumberOfOccurrences)
+		}
+	}
 	_, err := fmt.Fprintf(
 		writer,
-		"%s\nCalendar: %s\nStart: %s\nEnd: %s\nLocation: %s\nRequired: %s\nOptional: %s\nInvitations will be sent: %s\nTeams meeting link: %s\nSubject: %s\nBody (%d bytes, SHA-256 %s):\n%s\n",
+		"%s\nCalendar: %s\nStart: %s\nEnd: %s\nTime zone: %s\nAll day: %s\nReminder: %s\nRecurrence: %s\nLocation: %s\nRequired: %s\nOptional: %s\nInvitations will be sent: %s\nTeams meeting link: %s\nSubject: %s\nBody (%d bytes, SHA-256 %s):\n%s\n",
 		action,
 		sanitizeCell(calendar, 4096),
 		sanitizeCell(review.Start, 64),
 		sanitizeCell(review.End, 64),
+		sanitizeCell(review.TimeZone, 128),
+		allDay,
+		reminder,
+		sanitizeCell(recurrence, 256),
 		sanitizeCell(review.Location, application.MaxCalendarLocationBytes),
 		sanitizeCell(joinReviewValues(review.RequiredAttendees), 8192),
 		sanitizeCell(joinReviewValues(review.OptionalAttendees), 8192),
@@ -412,6 +504,34 @@ func writeCalendarUpdateReview(
 		if _, err := fmt.Fprintf(
 			writer, "Start: %s\nEnd: %s\n",
 			sanitizeCell(*review.Start, 64), sanitizeCell(*review.End, 64),
+		); err != nil {
+			return err
+		}
+	}
+	if review.TimeZone != nil {
+		if _, err := fmt.Fprintf(writer, "Time zone: %s\n", sanitizeCell(*review.TimeZone, 128)); err != nil {
+			return err
+		}
+	}
+	if review.AllDay != nil {
+		if _, err := fmt.Fprintf(writer, "All day: %t\n", *review.AllDay); err != nil {
+			return err
+		}
+	}
+	if review.Reminder != nil {
+		value := "disabled"
+		if review.Reminder.Enabled {
+			value = fmt.Sprintf("%d minutes before start", review.Reminder.MinutesBeforeStart)
+		}
+		if _, err := fmt.Fprintf(writer, "Reminder: %s\n", value); err != nil {
+			return err
+		}
+	}
+	if review.ReplaceAttendees {
+		if _, err := fmt.Fprintf(
+			writer, "Required attendees: %s\nOptional attendees: %s\nAttendee updates may send invitations: yes\n",
+			sanitizeCell(joinReviewValues(review.RequiredAttendees), 8192),
+			sanitizeCell(joinReviewValues(review.OptionalAttendees), 8192),
 		); err != nil {
 			return err
 		}

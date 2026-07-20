@@ -156,3 +156,71 @@ func TestCalendarUpdatePreviewCannotAuthorizeCancellation(t *testing.T) {
 		t.Fatalf("unexpected calls: cancel=%d update=%d", port.cancelCalls, port.updateCalls)
 	}
 }
+
+func TestCalendarUpdateSupportsAllDayReminderAndAttendeeReplacement(t *testing.T) {
+	t.Parallel()
+
+	allDay := true
+	input := CalendarUpdateInput{
+		Account: "work", EventID: "event-1", ChangeKey: "change-1",
+		Start:    stringPointer("2026-07-20T00:00:00+01:00"),
+		End:      stringPointer("2026-07-21T00:00:00+01:00"),
+		TimeZone: stringPointer("GMT Standard Time"), AllDay: &allDay,
+		Reminder:          &CalendarReminder{Enabled: true, MinutesBeforeStart: 15},
+		ReplaceAttendees:  true,
+		RequiredAttendees: []string{"alice@example.invalid"},
+		OptionalAttendees: []string{"bob@example.invalid"},
+	}
+	if err := input.ValidateWithAttendeeLimit(2); err != nil {
+		t.Fatalf("ValidateWithAttendeeLimit() error = %v", err)
+	}
+	review := input.Review()
+	if review.AllDay == input.AllDay || review.Reminder == input.Reminder ||
+		!review.ReplaceAttendees || !review.AttendeeUpdatesMaySend || len(review.RequiredAttendees) != 1 {
+		t.Fatalf("unexpected review: %+v", review)
+	}
+}
+
+func TestCalendarUpdateRejectsUnsafeExtendedPatches(t *testing.T) {
+	t.Parallel()
+
+	valid := validCalendarUpdateInput()
+	tests := []CalendarUpdateInput{
+		func() CalendarUpdateInput {
+			value := valid
+			value.Start = stringPointer("2026-07-20T00:00:00+01:00")
+			value.End = stringPointer("2026-07-21T00:00:00+01:00")
+			allDay := true
+			value.AllDay = &allDay
+			return value
+		}(),
+		func() CalendarUpdateInput {
+			value := valid
+			value.TimeZone = stringPointer("GMT Standard Time")
+			value.Start = nil
+			value.End = nil
+			return value
+		}(),
+		func() CalendarUpdateInput {
+			value := valid
+			value.Reminder = &CalendarReminder{MinutesBeforeStart: 5}
+			return value
+		}(),
+		func() CalendarUpdateInput {
+			value := valid
+			value.RequiredAttendees = []string{"alice@example.invalid"}
+			return value
+		}(),
+		func() CalendarUpdateInput {
+			value := valid
+			value.ReplaceAttendees = true
+			value.RequiredAttendees = []string{"alice@example.invalid", "ALICE@example.invalid"}
+			return value
+		}(),
+	}
+	for _, input := range tests {
+		if err := input.ValidateWithAttendeeLimit(2); err == nil {
+			t.Fatalf("ValidateWithAttendeeLimit(%+v) unexpectedly succeeded", input)
+		}
+	}
+}

@@ -18,11 +18,13 @@ type MailBodyInput struct {
 	MessageID string           `json:"messageId"`
 }
 
-// MailBody is deliberately plain text and excludes attachments and headers.
+// MailBody is deliberately plain text and exposes only bounded attachment
+// metadata, never attachment content or message headers.
 type MailBody struct {
-	ID        string `json:"id"`
-	ChangeKey string `json:"changeKey,omitempty"`
-	Text      string `json:"text"`
+	ID          string                   `json:"id"`
+	ChangeKey   string                   `json:"changeKey,omitempty"`
+	Text        string                   `json:"text"`
+	Attachments []MailAttachmentMetadata `json:"attachments,omitempty"`
 }
 
 // MailBodyAccess represents either completed content or an approval preview.

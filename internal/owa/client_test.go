@@ -85,6 +85,28 @@ func TestClientCallsRegisteredAction(t *testing.T) {
 	}
 }
 
+func TestClientRoutesExplicitSharedMailboxWithoutChangingOrigin(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("X-AnchorMailbox") != "shared@example.invalid" ||
+			request.Header.Get("X-OWA-ExplicitLogonUser") != "shared@example.invalid" {
+			t.Errorf("missing explicit mailbox headers: %v", request.Header)
+		}
+		if request.URL.Path != "/owa/service.svc" {
+			t.Errorf("request escaped configured origin: %s", request.URL)
+		}
+		_, _ = writer.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	client := testClient(t, server, func(options *Options) {
+		options.Mailbox = "shared@example.invalid"
+	})
+	if err := client.Call(t.Context(), FindItem, struct{}{}, &struct{}{}); err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+}
+
 func TestClientRetriesReadsButNeverWrites(t *testing.T) {
 	t.Parallel()
 

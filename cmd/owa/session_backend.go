@@ -414,6 +414,31 @@ func (backend *sessionBackend) GetMailBody(
 	return access, err
 }
 
+func (backend *sessionBackend) GetMailAttachment(
+	ctx context.Context,
+	input application.MailAttachmentInput,
+	caller domain.Caller,
+) (application.MailAttachmentAccess, error) {
+	backend.mu.Lock()
+	if backend.closed {
+		backend.mu.Unlock()
+		return application.MailAttachmentAccess{}, errors.New("session backend is closed")
+	}
+	backend.active.Add(1)
+	backend.mu.Unlock()
+	defer backend.active.Done()
+
+	services, err := backend.accountServices(ctx, input.Account)
+	if err != nil {
+		return application.MailAttachmentAccess{}, err
+	}
+	access, err := services.mail.GetAttachment(ctx, input, caller)
+	if err == nil && access.Preview != nil {
+		backend.rememberPreview(access.Preview.Token, input.Account, access.Preview.ExpiresAt)
+	}
+	return access, err
+}
+
 func (backend *sessionBackend) CreateMailDraft(
 	ctx context.Context,
 	input application.MailDraftInput,
@@ -618,6 +643,57 @@ func (backend *sessionBackend) CommitMailReadState(
 	return access, nil
 }
 
+func (backend *sessionBackend) DeleteMail(
+	ctx context.Context,
+	input application.MailDeleteInput,
+	caller domain.Caller,
+) (application.MailDeleteAccess, error) {
+	backend.mu.Lock()
+	if backend.closed {
+		backend.mu.Unlock()
+		return application.MailDeleteAccess{}, errors.New("session backend is closed")
+	}
+	backend.active.Add(1)
+	backend.mu.Unlock()
+	defer backend.active.Done()
+
+	services, err := backend.accountServices(ctx, input.Account)
+	if err != nil {
+		return application.MailDeleteAccess{}, err
+	}
+	access, err := services.mail.Delete(ctx, input, caller)
+	if err == nil && access.Preview != nil {
+		backend.rememberPreview(access.Preview.Token, input.Account, access.Preview.ExpiresAt)
+	}
+	return access, err
+}
+
+func (backend *sessionBackend) CommitMailDelete(
+	ctx context.Context,
+	token string,
+	caller domain.Caller,
+) (application.MailDeleteAccess, error) {
+	backend.mu.Lock()
+	if backend.closed {
+		backend.mu.Unlock()
+		return application.MailDeleteAccess{}, errors.New("session backend is closed")
+	}
+	backend.active.Add(1)
+	backend.mu.Unlock()
+	defer backend.active.Done()
+
+	account, exists := backend.accountForPreview(token)
+	if !exists || account.mail == nil {
+		return application.MailDeleteAccess{}, errors.New("invalid or expired approval token")
+	}
+	access, err := account.mail.CommitDelete(ctx, token, caller)
+	if err != nil {
+		return application.MailDeleteAccess{}, err
+	}
+	backend.forgetPreview(token)
+	return access, nil
+}
+
 func (backend *sessionBackend) CommitMailBody(
 	ctx context.Context,
 	token string,
@@ -639,6 +715,32 @@ func (backend *sessionBackend) CommitMailBody(
 	access, err := account.mail.CommitBody(ctx, token, caller)
 	if err != nil {
 		return application.MailBodyAccess{}, err
+	}
+	backend.forgetPreview(token)
+	return access, nil
+}
+
+func (backend *sessionBackend) CommitMailAttachment(
+	ctx context.Context,
+	token string,
+	caller domain.Caller,
+) (application.MailAttachmentAccess, error) {
+	backend.mu.Lock()
+	if backend.closed {
+		backend.mu.Unlock()
+		return application.MailAttachmentAccess{}, errors.New("session backend is closed")
+	}
+	backend.active.Add(1)
+	backend.mu.Unlock()
+	defer backend.active.Done()
+
+	account, exists := backend.accountForPreview(token)
+	if !exists || account.mail == nil {
+		return application.MailAttachmentAccess{}, errors.New("invalid or expired approval token")
+	}
+	access, err := account.mail.CommitAttachment(ctx, token, caller)
+	if err != nil {
+		return application.MailAttachmentAccess{}, err
 	}
 	backend.forgetPreview(token)
 	return access, nil
@@ -890,6 +992,7 @@ func (backend *sessionBackend) accountFromHandle(
 ) (sessionAccount, error) {
 	client, err := owa.NewClient(owa.Options{
 		Origin:     configured.Origin,
+		Mailbox:    configured.Mailbox,
 		Authorizer: handle,
 		UserAgent:  "owa-bridge/" + backend.app.info.Version,
 	})

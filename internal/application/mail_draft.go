@@ -16,20 +16,65 @@ import (
 )
 
 const (
-	MaxMailRecipients     = 500
-	MaxMailSubjectBytes   = 998
-	MaxMailDraftBodyBytes = 1 << 20
-	mailDraftPreviewRunes = 500
+	MaxMailRecipients           = 500
+	MaxMailSubjectBytes         = 998
+	MaxMailDraftBodyBytes       = 1 << 20
+	MaxMailAttachments          = 10
+	MaxMailAttachmentBytes      = 2 << 20
+	MaxMailAttachmentTotalBytes = 3 << 20
+	mailDraftPreviewRunes       = 500
 )
 
-// MailDraftInput creates a save-only plain-text draft. It never sends mail.
+// MailComposeMode selects a closed composition shape. Response modes keep the
+// exact source item version in the reviewed operation.
+type MailComposeMode string
+
+const (
+	MailComposeNew      MailComposeMode = "new"
+	MailComposeReply    MailComposeMode = "reply"
+	MailComposeReplyAll MailComposeMode = "reply_all"
+	MailComposeForward  MailComposeMode = "forward"
+)
+
+// MailBodyFormat is deliberately limited to the two Exchange body formats.
+type MailBodyFormat string
+
+const (
+	MailBodyText MailBodyFormat = "text"
+	MailBodyHTML MailBodyFormat = "html"
+)
+
+// MailFileAttachment is one bounded file attachment embedded in the immutable
+// operation. Content is encoded as base64 by encoding/json and is never shown
+// in previews or audit records.
+type MailFileAttachment struct {
+	Name        string `json:"name"`
+	ContentType string `json:"contentType,omitempty"`
+	Content     []byte `json:"content"`
+}
+
+// MailAttachmentReview identifies attachment content without exposing it.
+type MailAttachmentReview struct {
+	Name        string `json:"name"`
+	ContentType string `json:"contentType,omitempty"`
+	Bytes       int    `json:"bytes"`
+	SHA256      string `json:"sha256"`
+}
+
+// MailDraftInput creates a save-only new-message or response draft. It never
+// sends mail.
 type MailDraftInput struct {
-	Account domain.AccountID `json:"account"`
-	To      []string         `json:"to,omitempty"`
-	CC      []string         `json:"cc,omitempty"`
-	BCC     []string         `json:"bcc,omitempty"`
-	Subject string           `json:"subject,omitempty"`
-	Body    string           `json:"body,omitempty"`
+	Account            domain.AccountID     `json:"account"`
+	To                 []string             `json:"to,omitempty"`
+	CC                 []string             `json:"cc,omitempty"`
+	BCC                []string             `json:"bcc,omitempty"`
+	Subject            string               `json:"subject,omitempty"`
+	Body               string               `json:"body,omitempty"`
+	BodyFormat         MailBodyFormat       `json:"bodyFormat,omitempty"`
+	ComposeMode        MailComposeMode      `json:"composeMode,omitempty"`
+	ReferenceMessageID string               `json:"referenceMessageId,omitempty"`
+	ReferenceChangeKey string               `json:"referenceChangeKey,omitempty"`
+	Attachments        []MailFileAttachment `json:"attachments,omitempty"`
 }
 
 // MailDraft identifies the saved draft returned by OWA.
@@ -40,13 +85,18 @@ type MailDraft struct {
 
 // MailReview is safe to show before saving or sending an exact composition.
 type MailReview struct {
-	To          []string `json:"to,omitempty"`
-	CC          []string `json:"cc,omitempty"`
-	BCC         []string `json:"bcc,omitempty"`
-	Subject     string   `json:"subject,omitempty"`
-	BodyPreview string   `json:"bodyPreview,omitempty"`
-	BodyBytes   int      `json:"bodyBytes"`
-	BodySHA256  string   `json:"bodySha256"`
+	To                 []string               `json:"to,omitempty"`
+	CC                 []string               `json:"cc,omitempty"`
+	BCC                []string               `json:"bcc,omitempty"`
+	Subject            string                 `json:"subject,omitempty"`
+	BodyPreview        string                 `json:"bodyPreview,omitempty"`
+	BodyBytes          int                    `json:"bodyBytes"`
+	BodySHA256         string                 `json:"bodySha256"`
+	BodyFormat         MailBodyFormat         `json:"bodyFormat"`
+	ComposeMode        MailComposeMode        `json:"composeMode"`
+	ReferenceMessageID string                 `json:"referenceMessageId,omitempty"`
+	ReferenceChangeKey string                 `json:"referenceChangeKey,omitempty"`
+	Attachments        []MailAttachmentReview `json:"attachments,omitempty"`
 }
 
 // MailDraftAccess represents a completed save or an approval preview.
@@ -164,6 +214,39 @@ func (input MailDraftInput) Validate(maxRecipients int) error {
 	if count > maxRecipients {
 		return fmt.Errorf("mail draft has %d recipients; maximum is %d", count, maxRecipients)
 	}
+	mode := input.EffectiveComposeMode()
+	switch mode {
+	case MailComposeNew:
+		if input.ReferenceMessageID != "" || input.ReferenceChangeKey != "" {
+			return errors.New("new mail must not include a reference message")
+		}
+	case MailComposeReply, MailComposeReplyAll:
+		if err := validateOpaqueValue("reference message ID", input.ReferenceMessageID); err != nil {
+			return err
+		}
+		if err := validateOpaqueValue("reference message change key", input.ReferenceChangeKey); err != nil {
+			return err
+		}
+		if count != 0 {
+			return errors.New("reply recipients are derived from the reference message")
+		}
+	case MailComposeForward:
+		if err := validateOpaqueValue("reference message ID", input.ReferenceMessageID); err != nil {
+			return err
+		}
+		if err := validateOpaqueValue("reference message change key", input.ReferenceChangeKey); err != nil {
+			return err
+		}
+		if count == 0 {
+			return errors.New("forward requires at least one recipient")
+		}
+	default:
+		return fmt.Errorf("unsupported mail compose mode %q", input.ComposeMode)
+	}
+	format := input.EffectiveBodyFormat()
+	if format != MailBodyText && format != MailBodyHTML {
+		return fmt.Errorf("unsupported mail body format %q", input.BodyFormat)
+	}
 	for _, recipient := range append(append(append([]string{}, input.To...), input.CC...), input.BCC...) {
 		if err := validateMailAddress(recipient); err != nil {
 			return err
@@ -177,8 +260,36 @@ func (input MailDraftInput) Validate(maxRecipients int) error {
 		strings.ContainsRune(input.Body, '\x00') {
 		return errors.New("mail draft body is malformed or too large")
 	}
+	if len(input.Attachments) > MaxMailAttachments {
+		return fmt.Errorf("mail draft has %d attachments; maximum is %d", len(input.Attachments), MaxMailAttachments)
+	}
+	totalAttachmentBytes := 0
+	seenAttachmentNames := make(map[string]struct{}, len(input.Attachments))
+	for _, attachment := range input.Attachments {
+		if !utf8.ValidString(attachment.Name) || attachment.Name == "" || len(attachment.Name) > 255 ||
+			strings.TrimSpace(attachment.Name) != attachment.Name || strings.ContainsAny(attachment.Name, "/\\\r\n\x00") {
+			return errors.New("mail attachment name is malformed")
+		}
+		if _, exists := seenAttachmentNames[strings.ToLower(attachment.Name)]; exists {
+			return fmt.Errorf("mail attachment %q appears more than once", attachment.Name)
+		}
+		seenAttachmentNames[strings.ToLower(attachment.Name)] = struct{}{}
+		if len(attachment.Content) == 0 || len(attachment.Content) > MaxMailAttachmentBytes {
+			return fmt.Errorf("mail attachment %q must contain between 1 and %d bytes", attachment.Name, MaxMailAttachmentBytes)
+		}
+		if len(attachment.ContentType) > 255 || strings.TrimSpace(attachment.ContentType) != attachment.ContentType ||
+			strings.ContainsAny(attachment.ContentType, "\r\n\x00") {
+			return fmt.Errorf("mail attachment %q content type is malformed", attachment.Name)
+		}
+		totalAttachmentBytes += len(attachment.Content)
+	}
+	if totalAttachmentBytes > MaxMailAttachmentTotalBytes {
+		return fmt.Errorf("mail attachments total %d bytes; maximum is %d", totalAttachmentBytes, MaxMailAttachmentTotalBytes)
+	}
 	if count == 0 && input.Subject == "" && input.Body == "" {
-		return errors.New("mail draft must contain a recipient, subject, or body")
+		if mode == MailComposeNew && len(input.Attachments) == 0 {
+			return errors.New("mail draft must contain a recipient, subject, body, or attachment")
+		}
 	}
 	return nil
 }
@@ -202,9 +313,36 @@ func (input MailDraftInput) Review() MailReview {
 		preview = string(runes[:mailDraftPreviewRunes-1]) + "…"
 	}
 	digest := sha256.Sum256([]byte(input.Body))
+	attachments := make([]MailAttachmentReview, 0, len(input.Attachments))
+	for _, attachment := range input.Attachments {
+		attachmentDigest := sha256.Sum256(attachment.Content)
+		attachments = append(attachments, MailAttachmentReview{
+			Name: attachment.Name, ContentType: attachment.ContentType,
+			Bytes: len(attachment.Content), SHA256: hex.EncodeToString(attachmentDigest[:]),
+		})
+	}
 	return MailReview{
 		To: append([]string(nil), input.To...), CC: append([]string(nil), input.CC...),
 		BCC: append([]string(nil), input.BCC...), Subject: input.Subject,
 		BodyPreview: preview, BodyBytes: len(input.Body), BodySHA256: hex.EncodeToString(digest[:]),
+		BodyFormat: input.EffectiveBodyFormat(), ComposeMode: input.EffectiveComposeMode(),
+		ReferenceMessageID: input.ReferenceMessageID, ReferenceChangeKey: input.ReferenceChangeKey,
+		Attachments: attachments,
 	}
+}
+
+// EffectiveComposeMode applies the backward-compatible new-message default.
+func (input MailDraftInput) EffectiveComposeMode() MailComposeMode {
+	if input.ComposeMode == "" {
+		return MailComposeNew
+	}
+	return input.ComposeMode
+}
+
+// EffectiveBodyFormat applies the backward-compatible plain-text default.
+func (input MailDraftInput) EffectiveBodyFormat() MailBodyFormat {
+	if input.BodyFormat == "" {
+		return MailBodyText
+	}
+	return input.BodyFormat
 }

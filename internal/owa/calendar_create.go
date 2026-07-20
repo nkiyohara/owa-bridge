@@ -25,23 +25,67 @@ type calendarCreateRequest struct {
 }
 
 type calendarCreateItem struct {
-	Type                  string                 `json:"__type"`
-	Subject               string                 `json:"Subject"`
-	Body                  bodyContent            `json:"Body"`
-	Sensitivity           string                 `json:"Sensitivity"`
-	Importance            string                 `json:"Importance"`
-	ReminderIsSet         bool                   `json:"ReminderIsSet"`
-	IsAllDayEvent         bool                   `json:"IsAllDayEvent"`
-	Start                 string                 `json:"Start"`
-	End                   string                 `json:"End"`
-	FreeBusyType          string                 `json:"FreeBusyType"`
-	RequiredAttendees     []calendarAttendee     `json:"RequiredAttendees,omitempty"`
-	OptionalAttendees     []calendarAttendee     `json:"OptionalAttendees,omitempty"`
-	Location              calendarCreateLocation `json:"Location"`
-	StartTimeZone         timeZoneDefinition     `json:"StartTimeZone"`
-	EndTimeZone           timeZoneDefinition     `json:"EndTimeZone"`
-	IsOnlineMeeting       bool                   `json:"IsOnlineMeeting,omitempty"`
-	OnlineMeetingProvider string                 `json:"OnlineMeetingProvider,omitempty"`
+	Type                       string                 `json:"__type"`
+	Subject                    string                 `json:"Subject"`
+	Body                       bodyContent            `json:"Body"`
+	Sensitivity                string                 `json:"Sensitivity"`
+	Importance                 string                 `json:"Importance"`
+	ReminderIsSet              bool                   `json:"ReminderIsSet"`
+	ReminderMinutesBeforeStart *int                   `json:"ReminderMinutesBeforeStart,omitempty"`
+	IsAllDayEvent              bool                   `json:"IsAllDayEvent"`
+	Start                      string                 `json:"Start"`
+	End                        string                 `json:"End"`
+	FreeBusyType               string                 `json:"FreeBusyType"`
+	RequiredAttendees          []calendarAttendee     `json:"RequiredAttendees,omitempty"`
+	OptionalAttendees          []calendarAttendee     `json:"OptionalAttendees,omitempty"`
+	Location                   calendarCreateLocation `json:"Location"`
+	StartTimeZone              timeZoneDefinition     `json:"StartTimeZone"`
+	EndTimeZone                timeZoneDefinition     `json:"EndTimeZone"`
+	IsOnlineMeeting            bool                   `json:"IsOnlineMeeting,omitempty"`
+	OnlineMeetingProvider      string                 `json:"OnlineMeetingProvider,omitempty"`
+	Recurrence                 *calendarRecurrence    `json:"Recurrence,omitempty"`
+}
+
+type calendarRecurrence struct {
+	Type              string `json:"__type"`
+	RecurrencePattern any    `json:"RecurrencePattern"`
+	RecurrenceRange   any    `json:"RecurrenceRange"`
+}
+
+type dailyRecurrencePattern struct {
+	Type     string `json:"__type"`
+	Interval int    `json:"Interval"`
+}
+
+type weeklyRecurrencePattern struct {
+	Type           string   `json:"__type"`
+	Interval       int      `json:"Interval"`
+	DaysOfWeek     []string `json:"DaysOfWeek"`
+	FirstDayOfWeek string   `json:"FirstDayOfWeek"`
+}
+
+type absoluteMonthlyRecurrencePattern struct {
+	Type       string `json:"__type"`
+	Interval   int    `json:"Interval"`
+	DayOfMonth int    `json:"DayOfMonth"`
+}
+
+type absoluteYearlyRecurrencePattern struct {
+	Type       string `json:"__type"`
+	DayOfMonth int    `json:"DayOfMonth"`
+	Month      string `json:"Month"`
+}
+
+type endDateRecurrenceRange struct {
+	Type      string `json:"__type"`
+	StartDate string `json:"StartDate"`
+	EndDate   string `json:"EndDate"`
+}
+
+type numberedRecurrenceRange struct {
+	Type                string `json:"__type"`
+	StartDate           string `json:"StartDate"`
+	NumberOfOccurrences int    `json:"NumberOfOccurrences"`
 }
 
 type calendarAttendee struct {
@@ -86,9 +130,8 @@ type calendarCreateResultItem struct {
 	JoinOnlineMeetingURL  string `json:"JoinOnlineMeetingUrl"`
 }
 
-// CreateCalendarEvent creates exactly one non-recurring, non-all-day item
-// through OWA's specialized CreateCalendarEvent action. Client.Call never
-// retries writes.
+// CreateCalendarEvent creates exactly one bounded calendar item through OWA's
+// specialized CreateCalendarEvent action. Client.Call never retries writes.
 func (client *Client) CreateCalendarEvent(
 	ctx context.Context,
 	input application.CalendarCreateInput,
@@ -167,22 +210,34 @@ func buildCalendarCreateEnvelope(
 	if input.TeamsMeeting {
 		onlineMeetingProvider = teamsForBusinessProvider
 	}
-	zone := timeZoneDefinition{Type: "TimeZoneDefinitionType:#Exchange", ID: defaultZone}
+	zoneID := input.TimeZone
+	if zoneID == "" {
+		zoneID = defaultZone
+	}
+	zone := timeZoneDefinition{Type: "TimeZoneDefinitionType:#Exchange", ID: zoneID}
+	reminderIsSet := input.Reminder != nil && input.Reminder.Enabled
+	var reminderMinutes *int
+	if reminderIsSet {
+		value := input.Reminder.MinutesBeforeStart
+		reminderMinutes = &value
+	}
+	recurrence := calendarCreateRecurrence(input.Recurrence, start, zoneID)
 	request := calendarCreateRequest{
 		Type: "CreateItemRequest:#Exchange",
 		Items: []calendarCreateItem{{
-			Type:              "CalendarItem:#Exchange",
-			Subject:           input.Subject,
-			Body:              bodyContent{Type: "BodyContentType:#Exchange", BodyType: "Text", Value: input.Body},
-			Sensitivity:       "Normal",
-			Importance:        "Normal",
-			ReminderIsSet:     false,
-			IsAllDayEvent:     false,
-			Start:             formatCalendarBoundary(start),
-			End:               formatCalendarBoundary(end),
-			FreeBusyType:      "Busy",
-			RequiredAttendees: calendarAttendees(input.RequiredAttendees),
-			OptionalAttendees: calendarAttendees(input.OptionalAttendees),
+			Type:                       "CalendarItem:#Exchange",
+			Subject:                    input.Subject,
+			Body:                       bodyContent{Type: "BodyContentType:#Exchange", BodyType: "Text", Value: input.Body},
+			Sensitivity:                "Normal",
+			Importance:                 "Normal",
+			ReminderIsSet:              reminderIsSet,
+			ReminderMinutesBeforeStart: reminderMinutes,
+			IsAllDayEvent:              input.AllDay,
+			Start:                      formatCalendarBoundaryForZone(start, input.TimeZone),
+			End:                        formatCalendarBoundaryForZone(end, input.TimeZone),
+			FreeBusyType:               "Busy",
+			RequiredAttendees:          calendarAttendees(input.RequiredAttendees),
+			OptionalAttendees:          calendarAttendees(input.OptionalAttendees),
 			Location: calendarCreateLocation{
 				Type: "EnhancedLocation:#Exchange", DisplayName: input.Location,
 				PostalAddress: calendarPostalAddress{
@@ -193,6 +248,7 @@ func buildCalendarCreateEnvelope(
 			EndTimeZone:           zone,
 			IsOnlineMeeting:       input.TeamsMeeting,
 			OnlineMeetingProvider: onlineMeetingProvider,
+			Recurrence:            recurrence,
 		}},
 		SavedItemFolderID: targetFolderID{
 			Type:         "TargetFolderId:#Exchange",
@@ -202,9 +258,60 @@ func buildCalendarCreateEnvelope(
 	}
 	return calendarCreateEnvelope{
 		Type:   "CreateItemJsonRequest:#Exchange",
-		Header: newRequestHeader(defaultZone),
+		Header: newRequestHeader(zoneID),
 		Body:   request,
 	}, nil
+}
+
+func calendarCreateRecurrence(
+	value *application.CalendarRecurrence,
+	start time.Time,
+	zone string,
+) *calendarRecurrence {
+	if value == nil {
+		return nil
+	}
+	result := &calendarRecurrence{Type: "RecurrenceType:#Exchange"}
+	switch value.Pattern {
+	case application.CalendarRecurrenceDaily:
+		result.RecurrencePattern = dailyRecurrencePattern{
+			Type: "DailyRecurrencePattern:#Exchange", Interval: value.Interval,
+		}
+	case application.CalendarRecurrenceWeekly:
+		result.RecurrencePattern = weeklyRecurrencePattern{
+			Type: "WeeklyRecurrencePattern:#Exchange", Interval: value.Interval,
+			DaysOfWeek: append([]string(nil), value.DaysOfWeek...), FirstDayOfWeek: "Monday",
+		}
+	case application.CalendarRecurrenceAbsoluteMonthly:
+		result.RecurrencePattern = absoluteMonthlyRecurrencePattern{
+			Type:     "AbsoluteMonthlyRecurrencePattern:#Exchange",
+			Interval: value.Interval, DayOfMonth: value.DayOfMonth,
+		}
+	case application.CalendarRecurrenceAbsoluteYearly:
+		result.RecurrencePattern = absoluteYearlyRecurrencePattern{
+			Type:       "AbsoluteYearlyRecurrencePattern:#Exchange",
+			DayOfMonth: value.DayOfMonth, Month: value.Month,
+		}
+	}
+	startDate := formatCalendarRecurrenceDate(start, zone)
+	if value.EndDate != "" {
+		result.RecurrenceRange = endDateRecurrenceRange{
+			Type: "EndDateRecurrenceRange:#Exchange", StartDate: startDate, EndDate: value.EndDate,
+		}
+	} else {
+		result.RecurrenceRange = numberedRecurrenceRange{
+			Type: "NumberedRecurrenceRange:#Exchange", StartDate: startDate,
+			NumberOfOccurrences: value.NumberOfOccurrences,
+		}
+	}
+	return result
+}
+
+func formatCalendarRecurrenceDate(value time.Time, zone string) string {
+	if zone == "" || zone == defaultZone {
+		return value.UTC().Format("2006-01-02")
+	}
+	return value.Format("2006-01-02")
 }
 
 func calendarAttendees(addresses []string) []calendarAttendee {

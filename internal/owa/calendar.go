@@ -212,6 +212,13 @@ func formatCalendarBoundary(value time.Time) string {
 	return value.UTC().Format("2006-01-02T15:04:05.000")
 }
 
+func formatCalendarBoundaryForZone(value time.Time, zone string) string {
+	if zone == "" || zone == defaultZone {
+		return formatCalendarBoundary(value)
+	}
+	return value.Format("2006-01-02T15:04:05.000")
+}
+
 func normalizeCalendarTime(value string) (string, error) {
 	if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
 		return parsed.UTC().Format(time.RFC3339Nano), nil

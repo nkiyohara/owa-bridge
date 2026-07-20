@@ -39,7 +39,9 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "config.toml")
 	want := Default()
 	want.Policy.PreviewSensitiveReads = true
-	want.Accounts["personal"] = Account{Origin: "https://outlook.office.com/"}
+	want.Accounts["personal"] = Account{
+		Origin: "https://outlook.office.com/", Mailbox: "shared@example.invalid",
+	}
 	if err := Save(path, want); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -47,7 +49,8 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if got.Version != want.Version || got.Policy != want.Policy || len(got.Accounts) != len(want.Accounts) {
+	if got.Version != want.Version || got.Policy != want.Policy || len(got.Accounts) != len(want.Accounts) ||
+		got.Accounts["personal"] != want.Accounts["personal"] {
 		t.Fatalf("Load() = %+v, want %+v", got, want)
 	}
 
@@ -130,6 +133,11 @@ func TestValidateRejectsUnsafeValues(t *testing.T) {
 		},
 		func(configuration *Config) {
 			configuration.Accounts["work"] = Account{Origin: "https://example.com/owa"}
+		},
+		func(configuration *Config) {
+			configuration.Accounts["work"] = Account{
+				Origin: "https://outlook.example", Mailbox: "Shared <shared@example.invalid>",
+			}
 		},
 		func(configuration *Config) { configuration.Policy.Mode = policy.Mode("unguarded") },
 		func(configuration *Config) { configuration.Policy.MaxRecipients = 0 },

@@ -18,28 +18,41 @@ const CalendarMeetingUpdateModeOWADefault = "owa_default"
 // CalendarUpdateInput applies a closed patch to one exact event version.
 // Nil fields remain unchanged; an empty pointed-to string clears that field.
 type CalendarUpdateInput struct {
-	Account   domain.AccountID `json:"account"`
-	EventID   string           `json:"eventId"`
-	ChangeKey string           `json:"changeKey"`
-	Subject   *string          `json:"subject,omitempty"`
-	Body      *string          `json:"body,omitempty"`
-	Start     *string          `json:"start,omitempty"`
-	End       *string          `json:"end,omitempty"`
-	Location  *string          `json:"location,omitempty"`
+	Account           domain.AccountID  `json:"account"`
+	EventID           string            `json:"eventId"`
+	ChangeKey         string            `json:"changeKey"`
+	Subject           *string           `json:"subject,omitempty"`
+	Body              *string           `json:"body,omitempty"`
+	Start             *string           `json:"start,omitempty"`
+	End               *string           `json:"end,omitempty"`
+	TimeZone          *string           `json:"timeZone,omitempty"`
+	Location          *string           `json:"location,omitempty"`
+	AllDay            *bool             `json:"allDay,omitempty"`
+	Reminder          *CalendarReminder `json:"reminder,omitempty"`
+	ReplaceAttendees  bool              `json:"replaceAttendees,omitempty"`
+	RequiredAttendees []string          `json:"requiredAttendees,omitempty"`
+	OptionalAttendees []string          `json:"optionalAttendees,omitempty"`
 }
 
 // CalendarUpdateReview displays the exact patch without exposing an unbounded
 // body. MeetingUpdateMode records that attendee notification behavior remains
 // under OWA's default calendar policy.
 type CalendarUpdateReview struct {
-	EventID           string              `json:"eventId"`
-	ChangeKey         string              `json:"changeKey"`
-	Subject           *string             `json:"subject,omitempty"`
-	Body              *CalendarBodyReview `json:"body,omitempty"`
-	Start             *string             `json:"start,omitempty"`
-	End               *string             `json:"end,omitempty"`
-	Location          *string             `json:"location,omitempty"`
-	MeetingUpdateMode string              `json:"meetingUpdateMode"`
+	EventID                string              `json:"eventId"`
+	ChangeKey              string              `json:"changeKey"`
+	Subject                *string             `json:"subject,omitempty"`
+	Body                   *CalendarBodyReview `json:"body,omitempty"`
+	Start                  *string             `json:"start,omitempty"`
+	End                    *string             `json:"end,omitempty"`
+	TimeZone               *string             `json:"timeZone,omitempty"`
+	Location               *string             `json:"location,omitempty"`
+	AllDay                 *bool               `json:"allDay,omitempty"`
+	Reminder               *CalendarReminder   `json:"reminder,omitempty"`
+	ReplaceAttendees       bool                `json:"replaceAttendees"`
+	RequiredAttendees      []string            `json:"requiredAttendees,omitempty"`
+	OptionalAttendees      []string            `json:"optionalAttendees,omitempty"`
+	AttendeeUpdatesMaySend bool                `json:"attendeeUpdatesMaySend"`
+	MeetingUpdateMode      string              `json:"meetingUpdateMode"`
 }
 
 // CalendarUpdateResult contains a refreshed identity when OWA returns one.
@@ -67,7 +80,7 @@ func (service *CalendarService) Update(
 	input CalendarUpdateInput,
 	caller domain.Caller,
 ) (CalendarUpdateAccess, error) {
-	if err := input.Validate(); err != nil {
+	if err := input.ValidateWithAttendeeLimit(service.maxAttendees); err != nil {
 		return CalendarUpdateAccess{}, err
 	}
 	operation, err := domain.NewOperation(
@@ -110,7 +123,7 @@ func (service *CalendarService) CommitUpdate(
 	if err := operation.DecodePayload(&input); err != nil {
 		return CalendarUpdateAccess{}, err
 	}
-	if err := input.Validate(); err != nil {
+	if err := input.ValidateWithAttendeeLimit(service.maxAttendees); err != nil {
 		return CalendarUpdateAccess{}, err
 	}
 	updated, err := service.executeUpdate(ctx, input, caller, operation)
@@ -143,8 +156,17 @@ func (service *CalendarService) executeUpdate(
 // Validate rejects empty patches, stale-unsafe identities, and unsupported
 // independent start/end changes before policy or network use.
 func (input CalendarUpdateInput) Validate() error {
+	return input.ValidateWithAttendeeLimit(MaxCalendarAttendees)
+}
+
+// ValidateWithAttendeeLimit applies the configured attendee bound in addition
+// to the absolute protocol limit.
+func (input CalendarUpdateInput) ValidateWithAttendeeLimit(maxAttendees int) error {
 	if err := input.Account.Validate(); err != nil {
 		return err
+	}
+	if maxAttendees < 1 || maxAttendees > MaxCalendarAttendees {
+		return errors.New("invalid calendar attendee limit")
 	}
 	if err := validateOpaqueValue("calendar event ID", input.EventID); err != nil {
 		return err
@@ -153,7 +175,8 @@ func (input CalendarUpdateInput) Validate() error {
 		return err
 	}
 	if input.Subject == nil && input.Body == nil && input.Start == nil &&
-		input.End == nil && input.Location == nil {
+		input.End == nil && input.TimeZone == nil && input.Location == nil &&
+		input.AllDay == nil && input.Reminder == nil && !input.ReplaceAttendees {
 		return errors.New("calendar update must change at least one supported field")
 	}
 	if input.Subject != nil && (!utf8.ValidString(*input.Subject) ||
@@ -171,6 +194,15 @@ func (input CalendarUpdateInput) Validate() error {
 	if (input.Start == nil) != (input.End == nil) {
 		return errors.New("calendar start and end must be updated together")
 	}
+	if input.TimeZone != nil {
+		if input.Start == nil {
+			return errors.New("calendar time zone can only be updated with start and end")
+		}
+		if len(*input.TimeZone) > 128 || *input.TimeZone == "" || strings.TrimSpace(*input.TimeZone) != *input.TimeZone ||
+			strings.ContainsAny(*input.TimeZone, "\r\n\x00") {
+			return errors.New("calendar time zone is malformed")
+		}
+	}
 	if input.Start != nil {
 		start, err := time.Parse(time.RFC3339, *input.Start)
 		if err != nil {
@@ -187,6 +219,46 @@ func (input CalendarUpdateInput) Validate() error {
 		if duration > MaxCalendarEventDuration {
 			return fmt.Errorf("calendar event duration must not exceed %s", MaxCalendarEventDuration)
 		}
+		if input.AllDay != nil && *input.AllDay {
+			zone := ""
+			if input.TimeZone != nil {
+				zone = *input.TimeZone
+			}
+			if !isCalendarMidnight(calendarBoundaryForTimeZone(start, zone)) ||
+				!isCalendarMidnight(calendarBoundaryForTimeZone(end, zone)) {
+				return errors.New("all-day calendar start and end must be midnight boundaries in the reviewed time zone")
+			}
+		}
+	} else if input.AllDay != nil && *input.AllDay {
+		return errors.New("enabling all-day requires start and end midnight boundaries")
+	}
+	if input.Reminder != nil {
+		if input.Reminder.MinutesBeforeStart < 0 || input.Reminder.MinutesBeforeStart > MaxCalendarReminderMinutes {
+			return fmt.Errorf("calendar reminder must be between 0 and %d minutes", MaxCalendarReminderMinutes)
+		}
+		if !input.Reminder.Enabled && input.Reminder.MinutesBeforeStart != 0 {
+			return errors.New("disabled calendar reminder must use zero minutes")
+		}
+	}
+	if !input.ReplaceAttendees && (len(input.RequiredAttendees) != 0 || len(input.OptionalAttendees) != 0) {
+		return errors.New("calendar attendee lists require replaceAttendees=true")
+	}
+	if input.ReplaceAttendees {
+		attendees := append(append([]string(nil), input.RequiredAttendees...), input.OptionalAttendees...)
+		if len(attendees) > maxAttendees {
+			return fmt.Errorf("calendar event has %d attendees; maximum is %d", len(attendees), maxAttendees)
+		}
+		seen := make(map[string]struct{}, len(attendees))
+		for _, attendee := range attendees {
+			if err := validateMailAddress(attendee); err != nil {
+				return fmt.Errorf("validate calendar attendee: %w", err)
+			}
+			normalized := strings.ToLower(attendee)
+			if _, exists := seen[normalized]; exists {
+				return fmt.Errorf("calendar attendee %q appears more than once", attendee)
+			}
+			seen[normalized] = struct{}{}
+		}
 	}
 	return nil
 }
@@ -196,14 +268,27 @@ func (input CalendarUpdateInput) Review() CalendarUpdateReview {
 	review := CalendarUpdateReview{
 		EventID: input.EventID, ChangeKey: input.ChangeKey,
 		Subject: cloneString(input.Subject), Start: cloneString(input.Start),
-		End: cloneString(input.End), Location: cloneString(input.Location),
-		MeetingUpdateMode: CalendarMeetingUpdateModeOWADefault,
+		End: cloneString(input.End), TimeZone: cloneString(input.TimeZone), Location: cloneString(input.Location),
+		AllDay: cloneBool(input.AllDay), Reminder: cloneCalendarReminder(input.Reminder),
+		ReplaceAttendees:       input.ReplaceAttendees,
+		RequiredAttendees:      append([]string(nil), input.RequiredAttendees...),
+		OptionalAttendees:      append([]string(nil), input.OptionalAttendees...),
+		AttendeeUpdatesMaySend: input.ReplaceAttendees,
+		MeetingUpdateMode:      CalendarMeetingUpdateModeOWADefault,
 	}
 	if input.Body != nil {
 		body := reviewCalendarBody(*input.Body)
 		review.Body = &body
 	}
 	return review
+}
+
+func cloneBool(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func cloneString(value *string) *string {

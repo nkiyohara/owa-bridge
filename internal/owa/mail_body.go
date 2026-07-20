@@ -31,8 +31,19 @@ type getItemResponseMessage struct {
 }
 
 type getItemMessage struct {
-	ItemID itemID      `json:"ItemId"`
-	Body   bodyContent `json:"Body"`
+	ItemID      itemID               `json:"ItemId"`
+	Body        bodyContent          `json:"Body"`
+	Attachments []mailAttachmentItem `json:"Attachments"`
+}
+
+type mailAttachmentItem struct {
+	Type         string `json:"__type,omitempty"`
+	AttachmentID itemID `json:"AttachmentId"`
+	Name         string `json:"Name"`
+	ContentType  string `json:"ContentType"`
+	Size         int    `json:"Size"`
+	IsInline     bool   `json:"IsInline"`
+	ContentID    string `json:"ContentId"`
 }
 
 type bodyContent struct {
@@ -74,11 +85,43 @@ func (client *Client) GetMessageBody(
 	if len(item.Body.Value) > application.MaxMailBodyBytes {
 		return application.MailBody{}, fmt.Errorf("mail body exceeds %d bytes", application.MaxMailBodyBytes)
 	}
+	if len(item.Attachments) > application.MaxMailAttachmentMetadata {
+		return application.MailBody{}, fmt.Errorf(
+			"OWA GetItem returned more than %d attachments", application.MaxMailAttachmentMetadata,
+		)
+	}
+	attachments := make([]application.MailAttachmentMetadata, 0, len(item.Attachments))
+	for _, attachment := range item.Attachments {
+		if err := validateOpaqueID("mail attachment", attachment.AttachmentID.ID); err != nil {
+			return application.MailBody{}, fmt.Errorf("invalid attachment in OWA response: %w", err)
+		}
+		if attachment.Size < 0 || len(attachment.Name) > 4096 || len(attachment.ContentType) > 255 ||
+			len(attachment.ContentID) > 4096 {
+			return application.MailBody{}, errors.New("OWA GetItem returned malformed attachment metadata")
+		}
+		attachments = append(attachments, application.MailAttachmentMetadata{
+			ID: attachment.AttachmentID.ID, Kind: mailAttachmentKind(attachment.Type), Name: attachment.Name,
+			ContentType: attachment.ContentType, Size: attachment.Size,
+			IsInline: attachment.IsInline, ContentID: attachment.ContentID,
+		})
+	}
 	return application.MailBody{
-		ID:        item.ItemID.ID,
-		ChangeKey: item.ItemID.ChangeKey,
-		Text:      item.Body.Value,
+		ID:          item.ItemID.ID,
+		ChangeKey:   item.ItemID.ChangeKey,
+		Text:        item.Body.Value,
+		Attachments: attachments,
 	}, nil
+}
+
+func mailAttachmentKind(typeName string) string {
+	switch typeName {
+	case "ItemAttachment:#Exchange":
+		return "item"
+	case "FileAttachment:#Exchange", "":
+		return "file"
+	default:
+		return "unknown"
+	}
 }
 
 func buildGetItemBodyEnvelope(input application.MailBodyInput) getItemEnvelope {
@@ -91,10 +134,10 @@ func buildGetItemBodyEnvelope(input application.MailBodyInput) getItemEnvelope {
 				Type:      "ItemResponseShape:#Exchange",
 				BaseShape: "IdOnly",
 				BodyType:  "Text",
-				AdditionalProperties: []propertyURI{{
-					Type:     "PropertyUri:#Exchange",
-					FieldURI: "item:Body",
-				}},
+				AdditionalProperties: []propertyURI{
+					{Type: "PropertyUri:#Exchange", FieldURI: "item:Body"},
+					{Type: "PropertyUri:#Exchange", FieldURI: "item:Attachments"},
+				},
 			},
 			ItemIDs: []itemID{{Type: "ItemId:#Exchange", ID: input.MessageID}},
 		},

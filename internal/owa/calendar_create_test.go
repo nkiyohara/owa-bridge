@@ -110,6 +110,57 @@ func TestCalendarCreateWithoutTeamsMeetingOmitsOnlineMeetingFields(t *testing.T)
 	}
 }
 
+func TestCalendarCreateBuildsAllDayReminderAndWeeklyRecurrence(t *testing.T) {
+	t.Parallel()
+
+	input := testCalendarCreateInput()
+	input.Start = "2026-07-20T00:00:00+01:00"
+	input.End = "2026-07-21T00:00:00+01:00"
+	input.AllDay = true
+	input.TimeZone = "GMT Standard Time"
+	input.Reminder = &application.CalendarReminder{Enabled: true, MinutesBeforeStart: 30}
+	input.Recurrence = &application.CalendarRecurrence{
+		Pattern: application.CalendarRecurrenceWeekly, Interval: 2,
+		DaysOfWeek: []string{"Monday", "Wednesday"}, NumberOfOccurrences: 6,
+	}
+	payload, err := buildCalendarCreateEnvelope(input)
+	if err != nil {
+		t.Fatalf("buildCalendarCreateEnvelope() error = %v", err)
+	}
+	item := payload.Body.Items[0]
+	if !item.IsAllDayEvent || !item.ReminderIsSet || item.ReminderMinutesBeforeStart == nil ||
+		*item.ReminderMinutesBeforeStart != 30 || item.Start != "2026-07-20T00:00:00.000" ||
+		payload.Header.TimeZoneContext.TimeZoneDefinition.ID != "GMT Standard Time" {
+		t.Fatalf("unexpected calendar item: %+v", item)
+	}
+	pattern, ok := item.Recurrence.RecurrencePattern.(weeklyRecurrencePattern)
+	rangeValue, rangeOK := item.Recurrence.RecurrenceRange.(numberedRecurrenceRange)
+	if !ok || !rangeOK || pattern.Interval != 2 || len(pattern.DaysOfWeek) != 2 ||
+		rangeValue.NumberOfOccurrences != 6 || rangeValue.StartDate != "2026-07-20" {
+		t.Fatalf("unexpected recurrence: %+v", item.Recurrence)
+	}
+}
+
+func TestCalendarCreateNormalizesDefaultUTCRecurrenceStartDate(t *testing.T) {
+	t.Parallel()
+
+	input := testCalendarCreateInput()
+	input.Start = "2026-07-20T00:30:00+01:00"
+	input.End = "2026-07-20T01:30:00+01:00"
+	input.Recurrence = &application.CalendarRecurrence{
+		Pattern: application.CalendarRecurrenceDaily, Interval: 1, NumberOfOccurrences: 2,
+	}
+	payload, err := buildCalendarCreateEnvelope(input)
+	if err != nil {
+		t.Fatalf("buildCalendarCreateEnvelope() error = %v", err)
+	}
+	item := payload.Body.Items[0]
+	rangeValue, ok := item.Recurrence.RecurrenceRange.(numberedRecurrenceRange)
+	if !ok || item.Start != "2026-07-19T23:30:00.000" || rangeValue.StartDate != "2026-07-19" {
+		t.Fatalf("UTC boundary and recurrence date diverged: item=%+v range=%+v", item, rangeValue)
+	}
+}
+
 func TestCalendarCreatePreservesOpaqueCalendarID(t *testing.T) {
 	t.Parallel()
 

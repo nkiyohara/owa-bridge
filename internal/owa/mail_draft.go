@@ -16,7 +16,7 @@ type createItemEnvelope struct {
 
 type createItemRequest struct {
 	Type                     string         `json:"__type"`
-	Items                    []draftMessage `json:"Items"`
+	Items                    []any          `json:"Items"`
 	ClientSupportsIRM        bool           `json:"ClientSupportsIrm"`
 	MessageDisposition       string         `json:"MessageDisposition"`
 	SendMeetingInvitations   string         `json:"SendMeetingInvitations"`
@@ -24,6 +24,18 @@ type createItemRequest struct {
 	SuppressReadReceipts     bool           `json:"SuppressReadReceipts"`
 	ComposeOperation         string         `json:"ComposeOperation"`
 	MessageDispositionString string         `json:"MessageDispositionString"`
+}
+
+type responseMessage struct {
+	Type                       string           `json:"__type"`
+	Subject                    string           `json:"Subject,omitempty"`
+	NewBodyContent             bodyContent      `json:"NewBodyContent"`
+	ReferenceItemID            itemID           `json:"ReferenceItemId"`
+	ToRecipients               []draftRecipient `json:"ToRecipients,omitempty"`
+	CCRecipients               []draftRecipient `json:"CcRecipients,omitempty"`
+	BCCRecipients              []draftRecipient `json:"BccRecipients,omitempty"`
+	IsDeliveryReceiptRequested bool             `json:"IsDeliveryReceiptRequested"`
+	IsReadReceiptRequested     bool             `json:"IsReadReceiptRequested"`
 }
 
 type draftMessage struct {
@@ -59,7 +71,7 @@ type createItemResult struct {
 	ItemID itemID `json:"ItemId"`
 }
 
-// CreateMailDraft saves one plain-text message without sending it.
+// CreateMailDraft saves one new-message or response draft without sending it.
 func (client *Client) CreateMailDraft(
 	ctx context.Context,
 	input application.MailDraftInput,
@@ -99,29 +111,67 @@ func (client *Client) CreateMailDraft(
 			)
 		}
 	}
-	return application.MailDraft{ID: item.ItemID.ID, ChangeKey: item.ItemID.ChangeKey}, nil
+	draft := application.MailDraft{ID: item.ItemID.ID, ChangeKey: item.ItemID.ChangeKey}
+	if len(input.Attachments) == 0 {
+		return draft, nil
+	}
+	attached, err := client.createFileAttachments(ctx, draft, input.Attachments)
+	if err != nil {
+		return application.MailDraft{}, err
+	}
+	return attached, nil
 }
 
 func buildCreateDraftEnvelope(input application.MailDraftInput) createItemEnvelope {
+	bodyType := "Text"
+	if input.EffectiveBodyFormat() == application.MailBodyHTML {
+		bodyType = "HTML"
+	}
+	composeOperation := "newMail"
+	var item any = draftMessage{
+		Type:    "Message:#Exchange",
+		Subject: input.Subject,
+		Body: bodyContent{
+			Type: "BodyContentType:#Exchange", BodyType: bodyType, Value: input.Body,
+		},
+		ToRecipients:               draftRecipients(input.To),
+		CCRecipients:               draftRecipients(input.CC),
+		BCCRecipients:              draftRecipients(input.BCC),
+		Importance:                 "Normal",
+		Sensitivity:                "Normal",
+		IsDeliveryReceiptRequested: false,
+		IsReadReceiptRequested:     false,
+	}
+	if input.EffectiveComposeMode() != application.MailComposeNew {
+		typeName := "ReplyToItem:#Exchange"
+		composeOperation = "reply"
+		switch input.EffectiveComposeMode() {
+		case application.MailComposeNew, application.MailComposeReply:
+		case application.MailComposeReplyAll:
+			typeName = "ReplyAllToItem:#Exchange"
+			composeOperation = "replyAll"
+		case application.MailComposeForward:
+			typeName = "ForwardItem:#Exchange"
+			composeOperation = "forward"
+		}
+		item = responseMessage{
+			Type: typeName, Subject: input.Subject,
+			NewBodyContent: bodyContent{
+				Type: "BodyContentType:#Exchange", BodyType: bodyType, Value: input.Body,
+			},
+			ReferenceItemID: itemID{
+				Type: "ItemId:#Exchange", ID: input.ReferenceMessageID, ChangeKey: input.ReferenceChangeKey,
+			},
+			ToRecipients: draftRecipients(input.To), CCRecipients: draftRecipients(input.CC),
+			BCCRecipients: draftRecipients(input.BCC),
+		}
+	}
 	return createItemEnvelope{
 		Type:   "CreateItemJsonRequest:#Exchange",
 		Header: newRequestHeader(defaultZone),
 		Body: createItemRequest{
-			Type: "CreateItemRequest:#Exchange",
-			Items: []draftMessage{{
-				Type:    "Message:#Exchange",
-				Subject: input.Subject,
-				Body: bodyContent{
-					Type: "BodyContentType:#Exchange", BodyType: "Text", Value: input.Body,
-				},
-				ToRecipients:               draftRecipients(input.To),
-				CCRecipients:               draftRecipients(input.CC),
-				BCCRecipients:              draftRecipients(input.BCC),
-				Importance:                 "Normal",
-				Sensitivity:                "Normal",
-				IsDeliveryReceiptRequested: false,
-				IsReadReceiptRequested:     false,
-			}},
+			Type:                   "CreateItemRequest:#Exchange",
+			Items:                  []any{item},
 			ClientSupportsIRM:      true,
 			MessageDisposition:     "SaveOnly",
 			SendMeetingInvitations: "SendToNone",
@@ -130,7 +180,7 @@ func buildCreateDraftEnvelope(input application.MailDraftInput) createItemEnvelo
 				BaseFolderID: folderID{Type: "DistinguishedFolderId:#Exchange", ID: "drafts"},
 			},
 			SuppressReadReceipts:     true,
-			ComposeOperation:         "newMail",
+			ComposeOperation:         composeOperation,
 			MessageDispositionString: "SaveOnly",
 		},
 	}

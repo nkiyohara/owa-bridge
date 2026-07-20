@@ -196,3 +196,72 @@ func TestCalendarCreateReviewTruncatesVisibleBodyAndBindsFullBody(t *testing.T) 
 		t.Fatalf("unexpected review: %+v", review)
 	}
 }
+
+func TestCalendarCreateSupportsAllDayReminderAndRecurrence(t *testing.T) {
+	t.Parallel()
+
+	input := validCalendarCreateInput()
+	input.Start = "2026-07-20T00:00:00+01:00"
+	input.End = "2026-07-21T00:00:00+01:00"
+	input.AllDay = true
+	input.TimeZone = "GMT Standard Time"
+	input.Reminder = &CalendarReminder{Enabled: true, MinutesBeforeStart: 30}
+	input.Recurrence = &CalendarRecurrence{
+		Pattern: CalendarRecurrenceWeekly, Interval: 2,
+		DaysOfWeek: []string{"Monday", "Wednesday"}, NumberOfOccurrences: 8,
+	}
+	if err := input.Validate(50); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	review := input.Review()
+	if !review.AllDay || review.TimeZone != "GMT Standard Time" || review.Reminder == input.Reminder ||
+		review.Recurrence == input.Recurrence || review.Recurrence.NumberOfOccurrences != 8 {
+		t.Fatalf("unexpected review: %+v", review)
+	}
+}
+
+func TestCalendarCreateAllDayUsesReviewedTimeZoneBoundaries(t *testing.T) {
+	t.Parallel()
+
+	input := validCalendarCreateInput()
+	input.Start = "2026-07-20T00:00:00+01:00"
+	input.End = "2026-07-21T00:00:00+01:00"
+	input.AllDay = true
+	if err := input.Validate(50); err == nil {
+		t.Fatal("Validate() accepted non-UTC all-day boundaries with the UTC default")
+	}
+	input.TimeZone = "GMT Standard Time"
+	if err := input.Validate(50); err != nil {
+		t.Fatalf("Validate() rejected boundaries in the reviewed time zone: %v", err)
+	}
+}
+
+func TestCalendarCreateRejectsMalformedReminderAndRecurrence(t *testing.T) {
+	t.Parallel()
+
+	valid := validCalendarCreateInput()
+	tests := []CalendarCreateInput{
+		func() CalendarCreateInput { value := valid; value.AllDay = true; return value }(),
+		func() CalendarCreateInput {
+			value := valid
+			value.Reminder = &CalendarReminder{MinutesBeforeStart: 5}
+			return value
+		}(),
+		func() CalendarCreateInput {
+			value := valid
+			value.Recurrence = &CalendarRecurrence{Pattern: CalendarRecurrenceDaily, Interval: 1}
+			return value
+		}(),
+		func() CalendarCreateInput {
+			value := valid
+			value.Recurrence = &CalendarRecurrence{Pattern: CalendarRecurrenceWeekly, Interval: 1, DaysOfWeek: []string{"Funday"}, NumberOfOccurrences: 2}
+			return value
+		}(),
+		func() CalendarCreateInput { value := valid; value.TimeZone = " bad "; return value }(),
+	}
+	for _, input := range tests {
+		if err := input.Validate(50); err == nil {
+			t.Fatalf("Validate(%+v) unexpectedly succeeded", input)
+		}
+	}
+}

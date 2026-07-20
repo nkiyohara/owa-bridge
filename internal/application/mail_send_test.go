@@ -98,6 +98,25 @@ func TestMailSendRejectsMissingRecipientAndWrongCaller(t *testing.T) {
 	}
 }
 
+func TestMailSendReviewBindsResponseAndAttachment(t *testing.T) {
+	t.Parallel()
+
+	input := MailSendInput{
+		Account: "work", To: []string{"alice@example.invalid"},
+		ComposeMode: MailComposeForward, ReferenceMessageID: "message-1",
+		ReferenceChangeKey: "change-1", BodyFormat: MailBodyHTML, Body: "<p>FYI</p>",
+		Attachments: []MailFileAttachment{{Name: "fixture.txt", Content: []byte("fixture")}},
+	}
+	if err := input.Validate(20); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	review := input.Review()
+	if review.ComposeMode != MailComposeForward || review.BodyFormat != MailBodyHTML ||
+		len(review.Attachments) != 1 || review.Attachments[0].SHA256 == "" {
+		t.Fatalf("unexpected review: %+v", review)
+	}
+}
+
 func TestMailSendAuditsAmbiguousOutcome(t *testing.T) {
 	t.Parallel()
 

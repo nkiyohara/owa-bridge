@@ -116,6 +116,45 @@ func TestCalendarUpdateCanClearClosedTextFields(t *testing.T) {
 	}
 }
 
+func TestCalendarUpdateBuildsReminderAllDayAndAttendeeReplacement(t *testing.T) {
+	t.Parallel()
+
+	allDay := true
+	input := application.CalendarUpdateInput{
+		Account: "work", EventID: "event-1", ChangeKey: "change-1",
+		Start:    owaStringPointer("2026-07-20T00:00:00+01:00"),
+		End:      owaStringPointer("2026-07-21T00:00:00+01:00"),
+		TimeZone: owaStringPointer("GMT Standard Time"), AllDay: &allDay,
+		Reminder:          &application.CalendarReminder{Enabled: true, MinutesBeforeStart: 15},
+		ReplaceAttendees:  true,
+		RequiredAttendees: []string{"alice@example.invalid"},
+	}
+	payload, err := buildCalendarUpdateEnvelope(input)
+	if err != nil {
+		t.Fatalf("buildCalendarUpdateEnvelope() error = %v", err)
+	}
+	got := make([]string, 0, len(payload.Body.ItemChange.Updates))
+	for _, update := range payload.Body.ItemChange.Updates {
+		got = append(got, update.Path.FieldURI)
+	}
+	want := []string{
+		"Start", "End", "StartTimeZoneId", "EndTimeZoneId", "IsAllDayEvent",
+		"ReminderIsSet", "ReminderMinutesBeforeStart", "RequiredAttendees", "OptionalAttendees",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("field URIs = %v, want %v", got, want)
+	}
+	if payload.Header.TimeZoneContext.TimeZoneDefinition.ID != "GMT Standard Time" ||
+		payload.Body.ItemChange.Updates[0].Item.Start == nil ||
+		*payload.Body.ItemChange.Updates[0].Item.Start != "2026-07-20T00:00:00.000" {
+		t.Fatalf("unexpected time-zone request: %+v", payload)
+	}
+	optional := payload.Body.ItemChange.Updates[len(payload.Body.ItemChange.Updates)-1].Item.OptionalAttendees
+	if optional == nil || *optional == nil || len(*optional) != 0 {
+		t.Fatalf("empty optional attendee list was not explicit: %+v", optional)
+	}
+}
+
 func TestCalendarUpdateValidatesBeforeNetwork(t *testing.T) {
 	t.Parallel()
 
