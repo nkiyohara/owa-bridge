@@ -158,4 +158,5 @@ jobs:
         run: |
           goreleaser check
           goreleaser release --snapshot --clean
+          go run ./tools/catalogrender --dist dist
           go run ./tools/releaseverify --dist dist

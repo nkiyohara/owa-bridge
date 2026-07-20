@@ -6,8 +6,9 @@ lines and [compatibility evidence](compatibility.md) records live observations.
 
 ## Local rehearsal
 
-Use the checksummed toolchain and build all six target archives, six native
-Linux packages, and both SBOM formats without contacting GitHub:
+Use the checksummed toolchain and build all six target archives, one tagged
+source archive, six native Linux packages, and both SBOM formats without
+contacting GitHub:
 
 ```console
 mise install
@@ -69,25 +70,28 @@ protocol, security, or compatibility gate to publish on schedule.
 
 The verifier requires:
 
-- six OS/architecture archives;
+- six OS/architecture archives and one tagged source archive;
 - six native Linux packages;
 - SPDX JSON and CycloneDX JSON SBOMs for every archive and package;
 - one SHA-256 manifest;
 - license, README, security policy, installation and MCP guides, manual page,
   and all three completion scripts inside each applicable artifact;
-- generated Homebrew Cask, Scoop, and WinGet manifests that reference the same
-  verified artifacts.
+- a source-building Homebrew Formula plus Scoop and WinGet manifests that
+  reference the same verified source or binary artifacts.
 
 The Sigstore bundle is attached after this inventory passes and therefore is
 not itself listed inside `checksums.txt`.
 
 ## Package catalogs
 
-Catalog publication remains separate from release creation. A future Homebrew
-tap, Scoop bucket, or WinGet submission must consume the already published
-assets and checksums; it must not rebuild the binary.
+Catalog publication remains separate from release creation. The release job
+renders, verifies, and preserves all three formats as a short-lived Actions
+artifact. The `homebrew-owa-bridge` tap and `scoop-owa-bridge` bucket update
+only from a public release and its checksum manifest. WinGet receives the same
+Windows archive URLs and hashes through a separately reviewed upstream pull
+request.
 
-GoReleaser renders all three catalog formats with `skip_upload: true`. The
-configured `homebrew-owa-bridge` and `scoop-owa-bridge` repositories are future
-targets, not repositories the release job may create. WinGet remains
-generation-only until its separate upstream review and automation are ready.
+Homebrew intentionally builds the tagged source archive. Until macOS binaries
+are signed and notarized, the project does not publish a binary Cask that would
+require users to weaken Gatekeeper. None of the catalog paths may rebuild or
+replace an existing GitHub release.

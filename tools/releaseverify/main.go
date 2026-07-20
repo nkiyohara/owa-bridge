@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -22,7 +23,8 @@ import (
 const (
 	expectedArchives = 6
 	expectedPackages = 6
-	expectedSBOMs    = 24
+	expectedSBOMs    = 26
+	expectedSources  = 1
 	licensePrefix    = "third_party_licenses/"
 	minimumLicenses  = 24
 )
@@ -127,8 +129,9 @@ func verifyChecksums(dist string) (map[string]string, error) {
 		}
 		hashes[name] = want
 	}
-	if len(hashes) != expectedArchives+expectedPackages+expectedSBOMs {
-		return nil, fmt.Errorf("checksum count is %d, want %d", len(hashes), 36)
+	expectedChecksums := expectedArchives + expectedPackages + expectedSBOMs + expectedSources
+	if len(hashes) != expectedChecksums {
+		return nil, fmt.Errorf("checksum count is %d, want %d", len(hashes), expectedChecksums)
 	}
 	return hashes, nil
 }
@@ -180,6 +183,13 @@ func verifyInventory(dist string, artifacts []artifact, hashes map[string]string
 				return err
 			}
 			sbomFormats[format]++
+		case "Source":
+			if hashes[item.Name] == "" {
+				return fmt.Errorf("source archive %q is absent from checksums", item.Name)
+			}
+			if err := verifySourceArchive(filepath.Join(dist, item.Name)); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -190,6 +200,7 @@ func verifyInventory(dist string, artifacts []artifact, hashes map[string]string
 		"Linux Package": expectedPackages,
 		"Metadata":      1,
 		"SBOM":          expectedSBOMs,
+		"Source":        expectedSources,
 	}
 	for kind, want := range wantCounts {
 		if counts[kind] != want {
@@ -209,8 +220,15 @@ func verifyInventory(dist string, artifacts []artifact, hashes map[string]string
 			return fmt.Errorf("%s package count is %d, want 2", extension, packageFormats[extension])
 		}
 	}
-	if sbomFormats["CycloneDX"] != 12 || sbomFormats["SPDX"] != 12 {
-		return fmt.Errorf("SBOM formats are %#v, want 12 CycloneDX and 12 SPDX", sbomFormats)
+	expectedPerSBOMFormat := expectedSBOMs / 2
+	if sbomFormats["CycloneDX"] != expectedPerSBOMFormat ||
+		sbomFormats["SPDX"] != expectedPerSBOMFormat {
+		return fmt.Errorf(
+			"SBOM formats are %#v, want %d CycloneDX and %d SPDX",
+			sbomFormats,
+			expectedPerSBOMFormat,
+			expectedPerSBOMFormat,
+		)
 	}
 	return nil
 }
@@ -461,27 +479,27 @@ func requireReleaseFiles(archive string, got, want []string) error {
 }
 
 func verifyCatalogs(dist string, hashes map[string]string) error {
-	cask, err := readLocalFile(filepath.Join(dist, "homebrew", "Casks", "owa-bridge.rb"))
+	formula, err := readLocalFile(filepath.Join(dist, "homebrew", "Formula", "owa-bridge.rb"))
 	if err != nil {
-		return fmt.Errorf("read Homebrew Cask: %w", err)
-	}
-	if !strings.Contains(string(cask), `binary "owa"`) {
-		return errors.New("homebrew Cask does not install owa")
+		return fmt.Errorf("read Homebrew Formula: %w", err)
 	}
 	for _, snippet := range []string{
-		`bash_completion "completions/owa.bash"`,
-		`zsh_completion "completions/_owa"`,
-		`fish_completion "completions/owa.fish"`,
-		`manpage "manpages/owa.1"`,
+		`depends_on "go" => :build`,
+		`system "go", "build", "-mod=vendor"`,
+		`bash_completion.install "completions/owa.bash" => "owa"`,
+		`zsh_completion.install "completions/_owa"`,
+		`fish_completion.install "completions/owa.fish"`,
+		`man1.install "manpages/owa.1"`,
+		`shell_output("#{bin}/owa version --json")`,
 	} {
-		if !strings.Contains(string(cask), snippet) {
-			return fmt.Errorf("homebrew Cask is missing %q", snippet)
+		if !strings.Contains(string(formula), snippet) {
+			return fmt.Errorf("homebrew Formula is missing %q", snippet)
 		}
 	}
 	for name, hash := range hashes {
-		if (strings.Contains(name, "_darwin_") || strings.Contains(name, "_linux_")) &&
-			(strings.HasSuffix(name, ".tar.gz")) && !strings.Contains(string(cask), hash) {
-			return fmt.Errorf("homebrew Cask is missing the hash for %q", name)
+		if strings.HasSuffix(name, "_source.tar.gz") &&
+			(!strings.Contains(string(formula), name) || !strings.Contains(string(formula), hash)) {
+			return fmt.Errorf("homebrew Formula does not bind %q to its hash", name)
 		}
 	}
 
@@ -529,6 +547,73 @@ func verifyCatalogs(dist string, hashes map[string]string) error {
 				return fmt.Errorf("WinGet manifest does not bind %q to its hash", name)
 			}
 		}
+	}
+	return nil
+}
+
+func verifySourceArchive(archivePath string) error {
+	file, err := openLocalFile(archivePath)
+	if err != nil {
+		return fmt.Errorf("open source archive: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	gzipReader, err := gzip.NewReader(file)
+	if err != nil {
+		return fmt.Errorf("read source archive compression: %w", err)
+	}
+	defer func() { _ = gzipReader.Close() }()
+
+	required := map[string]bool{
+		"LICENSE":                         false,
+		"go.mod":                          false,
+		"go.sum":                          false,
+		"cmd/owa/main.go":                 false,
+		"internal/buildinfo/buildinfo.go": false,
+		"manpages/owa.1":                  false,
+		"vendor/modules.txt":              false,
+		"completions/owa.bash":            false,
+		"completions/_owa":                false,
+		"completions/owa.fish":            false,
+	}
+	var prefix string
+	tarReader := tar.NewReader(gzipReader)
+	for {
+		header, err := tarReader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read source archive: %w", err)
+		}
+		if header.Typeflag == tar.TypeXGlobalHeader || header.Typeflag == tar.TypeXHeader {
+			continue
+		}
+		clean := pathpkg.Clean(header.Name)
+		if clean == "." || pathpkg.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") {
+			return fmt.Errorf("source archive contains unsafe path %q", header.Name)
+		}
+		parts := strings.SplitN(clean, "/", 2)
+		if len(parts) == 1 {
+			if header.FileInfo().IsDir() {
+				if prefix == "" {
+					prefix = parts[0]
+				}
+				continue
+			}
+			return fmt.Errorf("source archive file %q has no root directory", header.Name)
+		}
+		if prefix == "" {
+			prefix = parts[0]
+		}
+		if parts[0] != prefix {
+			return fmt.Errorf("source archive has multiple roots %q and %q", prefix, parts[0])
+		}
+		if _, exists := required[parts[1]]; exists && !header.FileInfo().IsDir() {
+			required[parts[1]] = true
+		}
+	}
+	if missing := sortedMissingFiles(required); len(missing) > 0 {
+		return fmt.Errorf("source archive is missing %q", missing)
 	}
 	return nil
 }

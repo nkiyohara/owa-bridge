@@ -4,6 +4,7 @@
 /coverage.out
 /coverage.html
 /.release/
+/vendor/
 
 # Local configuration and session state
 /.env

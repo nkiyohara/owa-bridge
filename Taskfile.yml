@@ -19,17 +19,17 @@ tasks:
   format:
     desc: Format Go source files
     cmds:
-      - gofmt -w .
+      - gofmt -w $(rg --files -g '*.go' -g '!vendor/**')
 
   format:check:
     desc: Verify Go source formatting
     cmds:
-      - test -z "$(gofmt -l .)"
+      - test -z "$(gofmt -l $(rg --files -g '*.go' -g '!vendor/**'))"
 
   docs:
     desc: Lint Markdown documentation
     cmds:
-      - markdownlint-cli2 "**/*.md" "#.git" "#.release"
+      - markdownlint-cli2 "**/*.md" "#.git" "#.release" "#vendor"
 
   vet:
     desc: Run the Go static analyzer
@@ -84,6 +84,7 @@ tasks:
     desc: Build all release archives and SBOMs without publishing
     cmds:
       - goreleaser release --snapshot --clean
+      - go run ./tools/catalogrender --dist dist
       - go run ./tools/releaseverify --dist dist
 
   actions:
