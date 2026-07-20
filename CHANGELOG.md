@@ -3,6 +3,17 @@
 All notable user-facing changes are recorded here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.1 - 2026-07-20
+
+### Package catalogs
+
+- Add a source-building Homebrew Formula, a Scoop bucket manifest, and WinGet
+  manifests bound to the verified release checksum inventory.
+- Preserve catalog metadata separately from release publication so catalog
+  updates cannot rebuild or replace a published artifact.
+- Add a tagged source archive for Homebrew builds and document package-manager
+  installation without asking users to bypass macOS Gatekeeper.
+
 ## 0.3.0 - 2026-07-20
 
 ### Mail composition and attachments

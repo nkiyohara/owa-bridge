@@ -21,6 +21,27 @@ third-party license material required by its linked dependencies.
 
 ## Download
 
+Install from a package catalog when available:
+
+```console
+# macOS or Linux (source-building Formula)
+brew install nkiyohara/owa-bridge/owa-bridge
+
+# Windows with Scoop
+scoop bucket add owa-bridge https://github.com/nkiyohara/scoop-owa-bridge
+scoop install owa-bridge/owa-bridge
+
+# Windows Package Manager
+winget install --id nkiyohara.OWABridge --exact
+```
+
+Homebrew builds the tagged source locally instead of downloading an
+unnotarized macOS binary. Scoop and WinGet install the exact Windows release
+archive recorded in the catalog. If a newly published version has not reached
+a catalog yet, use the signed GitHub release directly.
+
+### Direct release download
+
 Use the release page in a browser or GitHub CLI. For example:
 
 ```console
@@ -151,8 +172,9 @@ See [MCP integration](mcp.md) and
 
 ## Package catalogs
 
-GitHub release archives and Linux packages are the canonical install surface
-for 0.3. Release builds render Homebrew Cask, Scoop, and WinGet manifests from
-the same artifacts but do not publish them. Catalog publication requires
-separate repositories, review, and least-privilege automation; it will never
-silently rebuild an existing release.
+GitHub releases remain canonical. Every release renders and verifies a
+source-building Homebrew Formula, Scoop manifest, and WinGet manifest from the
+same checksum inventory. Dedicated catalog repositories consume those
+manifests only after the release is public; they never rebuild or replace an
+existing release artifact. WinGet updates additionally pass Microsoft's
+upstream review.

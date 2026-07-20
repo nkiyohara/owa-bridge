@@ -151,6 +151,10 @@ also receives deb, RPM, and APK packages. Every archive and package is covered
 by SHA-256 checksums and SPDX and CycloneDX SBOMs; the checksum manifest carries
 a keyless Sigstore bundle.
 
+Homebrew, Scoop, and WinGet installation commands are available in the
+[install guide](docs/install.md). Homebrew uses a source-building Formula;
+Scoop and WinGet bind directly to the checksummed Windows release archives.
+
 The binaries are not yet Apple-notarized or Windows Authenticode-signed. Do not
 weaken operating-system security controls merely to run a download; verify the
 release or build from the reviewed source when local policy requires signing.

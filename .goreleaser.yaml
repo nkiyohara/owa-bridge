@@ -4,6 +4,7 @@ project_name: owa-bridge
 
 before:
   hooks:
+    - go mod vendor
     - >-
         go-licenses check ./cmd/owa
         --ignore github.com/nkiyohara/owa-bridge
@@ -176,77 +177,48 @@ nfpms:
           mode: 0644
           mtime: "{{ .CommitDate }}"
 
-homebrew_casks:
-  - name: owa-bridge
-    ids:
-      - release
-    binaries:
-      - owa
-    manpages:
-      - manpages/owa.1
-    completions:
-      bash: completions/owa.bash
-      zsh: completions/_owa
-      fish: completions/owa.fish
-    repository:
-      owner: nkiyohara
-      name: homebrew-owa-bridge
-    homepage: https://github.com/nkiyohara/owa-bridge
-    description: Local-first Outlook Web CLI and MCP server
-    license: Apache-2.0
-    skip_upload: true
-
-scoops:
-  - name: owa-bridge
-    ids:
-      - release
-    repository:
-      owner: nkiyohara
-      name: scoop-owa-bridge
-    homepage: https://github.com/nkiyohara/owa-bridge
-    description: Local-first Outlook Web CLI and MCP server
-    license: Apache-2.0
-    skip_upload: true
-
-winget:
-  - name: owa-bridge
-    package_name: owa-bridge
-    package_identifier: nkiyohara.OWABridge
-    default_locale: en-US
-    publisher: nkiyohara
-    publisher_url: https://github.com/nkiyohara
-    publisher_support_url: https://github.com/nkiyohara/owa-bridge/issues
-    repository:
-      owner: microsoft
-      name: winget-pkgs
-    ids:
-      - release
-    homepage: https://github.com/nkiyohara/owa-bridge
-    short_description: Local-first Outlook Web CLI and MCP server
-    description: >-
-      Manage an authorized Outlook Web mail and calendar session through a
-      guarded CLI or local MCP server without a Microsoft Graph application.
-    license: Apache-2.0
-    license_url: https://github.com/nkiyohara/owa-bridge/blob/main/LICENSE
-    release_notes: "{{ .Changelog }}"
-    release_notes_url: >-
-      https://github.com/nkiyohara/owa-bridge/releases/tag/{{ .Tag }}
-    installation_notes: >-
-      Run `owa login` interactively, then print client configuration with
-      `owa mcp setup codex` or `owa mcp setup claude-code`.
-    tags:
-      - outlook
-      - email
-      - calendar
-      - cli
-      - mcp
-    skip_upload: true
+source:
+  enabled: true
+  name_template: "{{ .ProjectName }}_{{ .Version }}_source"
+  format: tar.gz
+  prefix_template: "{{ .ProjectName }}-{{ .Version }}/"
+  files:
+    - src: vendor/modules.txt
+      info:
+        mode: 0644
+        mtime: "{{ .CommitDate }}"
+    - src: vendor/**/*
+      info:
+        mode: 0644
+        mtime: "{{ .CommitDate }}"
 
 checksum:
   name_template: checksums.txt
   algorithm: sha256
 
 sboms:
+  - id: source-spdx
+    artifacts: source
+    cmd: ../.release/syft-reproducible
+    documents:
+      - "${artifact}.spdx.json"
+    args:
+      - "${artifact}"
+      - --output
+      - "spdx-json=${document}"
+      - --enrich
+      - all
+  - id: source-cyclonedx
+    artifacts: source
+    cmd: ../.release/syft-reproducible
+    documents:
+      - "${artifact}.cdx.json"
+    args:
+      - "${artifact}"
+      - --output
+      - "cyclonedx-json=${document}"
+      - --enrich
+      - all
   - id: spdx
     artifacts: archive
     ids:
