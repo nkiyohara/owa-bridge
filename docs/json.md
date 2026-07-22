@@ -121,6 +121,15 @@ returning a refreshed item identity. A transport failure after submission is
 reported as an unknown outcome instead of being converted into success or
 automatically retried.
 
+## Update status
+
+`owa update check --json` returns `status`, `currentVersion`,
+`updateAvailable`, and `cached`; successful comparisons also include
+`latestVersion`, `releaseUrl`, `checkedAt`, `installMethod`, and `upgrade`.
+`status` is `current`, `available`, `development`, or `unavailable`. This
+content-free result is separate from the Outlook application result types.
+Automatic human notices are never appended to JSON output.
+
 ## Compatibility policy
 
 These are stable adapter contracts, not raw Outlook payloads. OWA wire changes

@@ -36,6 +36,9 @@ func TestRenderBindsCatalogsToChecksums(t *testing.T) {
 		`depends_on "go" => :build`,
 		`std_go_args(output: bin/"owa"`,
 		`man1.install "manpages/owa.1"`,
+		`pkgshare.install "plugins"`,
+		`(pkgshare/".agents").install ".agents/plugins"`,
+		`(pkgshare/".claude-plugin").install ".claude-plugin/marketplace.json"`,
 	} {
 		if !strings.Contains(formula, want) {
 			t.Errorf("Homebrew Formula does not contain %q", want)

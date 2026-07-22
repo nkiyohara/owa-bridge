@@ -29,6 +29,9 @@ func TestPackageInventoryRequiresPublicChangelog(t *testing.T) {
 		"/usr/share/man/man1/owa.1",
 		"/usr/share/doc/owa-bridge/CHANGELOG.md",
 		"/usr/share/doc/owa-bridge/third_party_licenses",
+		"/usr/share/owa-bridge/plugins/owa-bridge",
+		"/usr/share/owa-bridge/.agents/plugins/marketplace.json",
+		"/usr/share/owa-bridge/.claude-plugin/marketplace.json",
 	}
 	files := make([]any, 0, len(destinations))
 	for _, destination := range destinations {

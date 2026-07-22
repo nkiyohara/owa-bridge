@@ -316,6 +316,11 @@ func TestMailListToolUsesDefaultsAndReturnsStructuredOutput(t *testing.T) {
 		t.Fatalf("client.Connect() error = %v", err)
 	}
 	t.Cleanup(func() { _ = clientSession.Close() })
+	initializeResult := clientSession.InitializeResult()
+	if initializeResult == nil || !strings.Contains(initializeResult.Instructions, "inbox or mailbox") ||
+		!strings.Contains(initializeResult.Instructions, "mail_list") {
+		t.Fatalf("server instructions do not describe Outlook discovery: %+v", initializeResult)
+	}
 
 	tools, err := clientSession.ListTools(t.Context(), nil)
 	if err != nil {
@@ -328,6 +333,9 @@ func TestMailListToolUsesDefaultsAndReturnsStructuredOutput(t *testing.T) {
 	annotation := mailTool.Annotations
 	if annotation == nil || !annotation.ReadOnlyHint || annotation.DestructiveHint == nil || *annotation.DestructiveHint {
 		t.Fatalf("unsafe or missing annotations: %+v", annotation)
+	}
+	if !strings.HasPrefix(mailTool.Description, "Use when the user asks to check Outlook") {
+		t.Fatalf("mail_list description does not front-load discovery guidance: %q", mailTool.Description)
 	}
 
 	result, err := clientSession.CallTool(t.Context(), &mcp.CallToolParams{
@@ -372,6 +380,9 @@ func TestMailSearchToolUsesBoundedDefaults(t *testing.T) {
 	if searchTool == nil || searchTool.Annotations == nil || !searchTool.Annotations.ReadOnlyHint ||
 		searchTool.Annotations.DestructiveHint == nil || *searchTool.Annotations.DestructiveHint {
 		t.Fatalf("unsafe search annotations: %+v", searchTool)
+	}
+	if !strings.HasPrefix(searchTool.Description, "Use when the user asks to find") {
+		t.Fatalf("mail_search description does not front-load discovery guidance: %q", searchTool.Description)
 	}
 	result, err := clientSession.CallTool(t.Context(), &mcp.CallToolParams{
 		Name: "mail_search", Arguments: map[string]any{"query": "subject:synthetic"},

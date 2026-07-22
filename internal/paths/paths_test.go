@@ -55,6 +55,17 @@ func TestStateDirRejectsInvalidInputs(t *testing.T) {
 	}
 }
 
+func TestUpdateCachePathUsesPrivateStateTree(t *testing.T) {
+	t.Setenv("OWA_STATE_DIR", filepath.Join(t.TempDir(), "state"))
+	path, err := UpdateCachePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(path) != "latest.json" || filepath.Base(filepath.Dir(path)) != "updates" {
+		t.Fatalf("UpdateCachePath() = %q", path)
+	}
+}
+
 func TestProfileDirDoesNotContainAccountAlias(t *testing.T) {
 	t.Setenv("OWA_STATE_DIR", t.TempDir())
 	alias := "work/team"

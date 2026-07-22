@@ -53,6 +53,15 @@ func AuditPath() (string, error) {
 	return filepath.Join(state, "audit", "events.jsonl"), nil
 }
 
+// UpdateCachePath returns the private, content-free release check cache.
+func UpdateCachePath() (string, error) {
+	state, err := StateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(state, "updates", "latest.json"), nil
+}
+
 func stateDir(
 	goos, home, configDirectory, cacheDirectory string,
 	configErr, cacheErr error,

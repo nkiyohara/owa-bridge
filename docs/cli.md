@@ -55,6 +55,24 @@ stage that failed.
 See [compatibility evidence](compatibility.md) for the live-test checklist and
 the data that is safe to include in a report.
 
+The offline and online reports include a non-failing `update` row. It reports a
+cached stable-release comparison, skips development builds and opt-outs, and
+never makes release-endpoint failure a doctor failure.
+
+## Check for updates
+
+```console
+owa update check
+owa update check --json
+```
+
+The command compares the running semantic version with the latest public,
+stable GitHub release and prints the installation-appropriate upgrade command.
+It never suggests a prerelease, downgrade, or unattended binary replacement.
+Results—including temporary network failure—are cached for 24 hours. See the
+[install guide](install.md#stay-current) for privacy, opt-out, and package
+manager details.
+
 ## Authenticate
 
 ```console
@@ -425,13 +443,26 @@ owa mcp setup codex
 owa mcp setup codex --dry-run
 owa mcp setup claude-code
 owa mcp setup claude-code --scope project
+owa mcp setup github-copilot
+owa mcp setup gemini-cli --scope user
+owa mcp setup qwen-code
+owa mcp setup qoder --scope user
 owa mcp config codex
 owa mcp config claude-code
+owa mcp config github-copilot
+owa mcp config gemini-cli
+owa mcp config qwen-code
+owa mcp config qoder
+owa mcp config kimi-code
 ```
 
-`setup` invokes `codex mcp add` or `claude mcp add` without rewriting client
-configuration itself. `config` prints native TOML or JSON for review and
-advanced settings. See [MCP integration](mcp.md) for details.
+`setup` invokes the supported client's official MCP command without rewriting
+unrelated configuration. New registrations default to `outlook-web` and the
+success message reminds users to start a new agent session. `config` prints
+native TOML or JSON for review, Kimi Code CLI, project configuration, and
+advanced settings. The supported client set is Codex, Claude Code, GitHub
+Copilot CLI, Gemini CLI, Qwen Code, Qoder, and Kimi Code CLI. See
+[MCP integration](mcp.md) for details.
 
 ## Generate shell completion
 

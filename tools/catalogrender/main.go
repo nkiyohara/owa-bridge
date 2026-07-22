@@ -218,6 +218,9 @@ func renderFormula(release metadata, hashes map[string]string) (string, error) {
     bash_completion.install "completions/owa.bash" => "owa"
     zsh_completion.install "completions/_owa"
     fish_completion.install "completions/owa.fish"
+    pkgshare.install "plugins"
+    (pkgshare/".agents").install ".agents/plugins"
+    (pkgshare/".claude-plugin").install ".claude-plugin/marketplace.json"
   end
 
   test do
@@ -329,7 +332,7 @@ Tags:
   - cli
   - mcp
 ReleaseNotesUrl: %s/releases/tag/%s
-InstallationNotes: Run `+"`owa login`"+` interactively, then print client configuration with `+"`owa mcp setup codex`"+` or `+"`owa mcp setup claude-code`"+`.
+InstallationNotes: Run `+"`owa login`"+` interactively, then register your agent with `+"`owa mcp setup <client>`"+`. See the MCP guide for all seven clients and Kimi Code CLI configuration.
 ManifestType: defaultLocale
 ManifestVersion: 1.12.0
 `, release.Version, repositoryURL, repositoryURL, repositoryURL, repositoryURL, release.Tag)

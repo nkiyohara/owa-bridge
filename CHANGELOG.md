@@ -3,6 +3,50 @@
 All notable user-facing changes are recorded here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.4.0 - 2026-07-22
+
+### Agent discovery
+
+- Add a portable Agent Skill that teaches compatible agents when to use
+  Outlook mail and calendar tools, how to stay metadata-first, and how to keep
+  reviewed writes explicit.
+- Add a polished Codex plugin and repository marketplace plus a
+  dual-compatible Claude Code plugin and marketplace.
+- Expand MCP server instructions and the three metadata entry-tool
+  descriptions with task-oriented discovery guidance.
+- Rename the default client connection from `owa` to the clearer
+  `outlook-web`; existing registrations and `--name owa` remain supported.
+
+### Client support
+
+- Support seven agent clients: Codex, Claude Code, GitHub Copilot CLI, Gemini
+  CLI, Qwen Code, Qoder, and Kimi Code CLI.
+- Add official CLI setup for GitHub Copilot CLI, Gemini CLI, Qwen Code, and
+  Qoder alongside Codex and Claude Code.
+- Add native configuration generators for GitHub Copilot CLI, Gemini CLI,
+  Qwen Code, Qoder, and Kimi Code CLI.
+- Make every successful setup print its verification command and remind users
+  to start a new agent session before asking it to use Outlook.
+
+### Documentation and website
+
+- Rework the README and MCP manual around a three-step install, connect, and
+  ask workflow, including Skill installation, migration, and troubleshooting.
+- Redesign GitHub Pages with a responsive agent quickstart, supported-client
+  overview, capability summary, and safety architecture.
+- Include the agent plugin and both marketplace manifests in verified release
+  archives and native Linux packages.
+
+### Updates
+
+- Add `owa update check` plus quiet, 24-hour-cached stable-release notices for
+  human-facing interactive commands.
+- Detect Homebrew, WinGet, Scoop, deb, RPM, APK, and direct installs and print
+  the matching upgrade guidance without replacing a binary.
+- Keep update notices out of MCP, completion, daemon, and JSON output; cache
+  endpoint failure, support config and environment opt-out, and expose a
+  non-failing update row in `owa doctor`.
+
 ## 0.3.2 - 2026-07-20
 
 ### Homebrew

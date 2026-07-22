@@ -236,12 +236,15 @@ func verifyInventory(dist string, artifacts []artifact, hashes map[string]string
 func packageMissingFiles(extra map[string]any) []string {
 	required := map[string]bool{
 		"/usr/bin/owa": false,
-		"/usr/share/bash-completion/completions/owa":     false,
-		"/usr/share/zsh/site-functions/_owa":             false,
-		"/usr/share/fish/vendor_completions.d/owa.fish":  false,
-		"/usr/share/man/man1/owa.1":                      false,
-		"/usr/share/doc/owa-bridge/CHANGELOG.md":         false,
-		"/usr/share/doc/owa-bridge/third_party_licenses": false,
+		"/usr/share/bash-completion/completions/owa":             false,
+		"/usr/share/zsh/site-functions/_owa":                     false,
+		"/usr/share/fish/vendor_completions.d/owa.fish":          false,
+		"/usr/share/man/man1/owa.1":                              false,
+		"/usr/share/doc/owa-bridge/CHANGELOG.md":                 false,
+		"/usr/share/doc/owa-bridge/third_party_licenses":         false,
+		"/usr/share/owa-bridge/plugins/owa-bridge":               false,
+		"/usr/share/owa-bridge/.agents/plugins/marketplace.json": false,
+		"/usr/share/owa-bridge/.claude-plugin/marketplace.json":  false,
 	}
 	files, ok := extra["Files"].([]any)
 	if !ok {
@@ -380,6 +383,8 @@ func verifyCanonicalTimestamp(value any) error {
 
 func verifyArchive(path, goos string) error {
 	want := []string{
+		".agents/plugins/marketplace.json",
+		".claude-plugin/marketplace.json",
 		"CHANGELOG.md",
 		"LICENSE",
 		"README.md",
@@ -390,6 +395,12 @@ func verifyArchive(path, goos string) error {
 		"docs/install.md",
 		"docs/mcp.md",
 		"manpages/owa.1",
+		"plugins/owa-bridge/.claude-plugin/plugin.json",
+		"plugins/owa-bridge/.codex-plugin/plugin.json",
+		"plugins/owa-bridge/README.md",
+		"plugins/owa-bridge/assets/icon.svg",
+		"plugins/owa-bridge/skills/owa-bridge/SKILL.md",
+		"plugins/owa-bridge/skills/owa-bridge/agents/openai.yaml",
 		licensePrefix + "github.com/alecthomas/kong/COPYING",
 		licensePrefix + "github.com/hashicorp/go-multierror/LICENSE",
 		licensePrefix + "github.com/hashicorp/go-multierror/multierror.go",
@@ -490,6 +501,9 @@ func verifyCatalogs(dist string, hashes map[string]string) error {
 		`zsh_completion.install "completions/_owa"`,
 		`fish_completion.install "completions/owa.fish"`,
 		`man1.install "manpages/owa.1"`,
+		`pkgshare.install "plugins"`,
+		`(pkgshare/".agents").install ".agents/plugins"`,
+		`(pkgshare/".claude-plugin").install ".claude-plugin/marketplace.json"`,
 		`shell_output("#{bin}/owa version --json")`,
 	} {
 		if !strings.Contains(string(formula), snippet) {
@@ -564,16 +578,20 @@ func verifySourceArchive(archivePath string) error {
 	defer func() { _ = gzipReader.Close() }()
 
 	required := map[string]bool{
-		"LICENSE":                         false,
-		"go.mod":                          false,
-		"go.sum":                          false,
-		"cmd/owa/main.go":                 false,
-		"internal/buildinfo/buildinfo.go": false,
-		"manpages/owa.1":                  false,
-		"vendor/modules.txt":              false,
-		"completions/owa.bash":            false,
-		"completions/_owa":                false,
-		"completions/owa.fish":            false,
+		".agents/plugins/marketplace.json": false,
+		".claude-plugin/marketplace.json":  false,
+		"LICENSE":                          false,
+		"go.mod":                           false,
+		"go.sum":                           false,
+		"cmd/owa/main.go":                  false,
+		"internal/buildinfo/buildinfo.go":  false,
+		"manpages/owa.1":                   false,
+		"vendor/modules.txt":               false,
+		"completions/owa.bash":             false,
+		"completions/_owa":                 false,
+		"completions/owa.fish":             false,
+		"plugins/owa-bridge/.codex-plugin/plugin.json":  false,
+		"plugins/owa-bridge/skills/owa-bridge/SKILL.md": false,
 	}
 	var prefix string
 	tarReader := tar.NewReader(gzipReader)

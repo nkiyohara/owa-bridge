@@ -1,0 +1,366 @@
+// Package updatecheck performs a quiet, cached check for newer stable releases.
+package updatecheck
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+)
+
+const (
+	// DefaultEndpoint returns the latest published non-prerelease GitHub release.
+	DefaultEndpoint = "https://api.github.com/repos/nkiyohara/owa-bridge/releases/latest"
+	cacheLifetime   = 24 * time.Hour
+	maximumBody     = 64 << 10
+	maximumCache    = 8 << 10
+)
+
+// Status describes the relationship between the running binary and the latest
+// stable release without initiating an update.
+type Status string
+
+const (
+	StatusCurrent     Status = "current"
+	StatusAvailable   Status = "available"
+	StatusDevelopment Status = "development"
+	StatusUnavailable Status = "unavailable"
+)
+
+// ErrUnavailable means public release metadata could not be checked. Callers
+// may report this for an explicit check, but automatic checks must ignore it.
+var ErrUnavailable = errors.New("stable release metadata is unavailable")
+
+// Result is safe for human or machine-readable output. It contains no account,
+// tenant, mailbox, configuration, or machine identifier.
+type Result struct {
+	Status          Status `json:"status"`
+	CurrentVersion  string `json:"currentVersion"`
+	LatestVersion   string `json:"latestVersion,omitempty"`
+	UpdateAvailable bool   `json:"updateAvailable"`
+	ReleaseURL      string `json:"releaseUrl,omitempty"`
+	CheckedAt       string `json:"checkedAt,omitempty"`
+	Cached          bool   `json:"cached"`
+}
+
+// Checker fetches and caches the latest stable public release. Dependencies
+// are explicit so all network, clock, and cache behavior is deterministic in
+// tests.
+type Checker struct {
+	CurrentVersion string
+	CachePath      string
+	Endpoint       string
+	Client         *http.Client
+	Now            func() time.Time
+}
+
+type releaseResponse struct {
+	TagName    string `json:"tag_name"`
+	Draft      bool   `json:"draft"`
+	Prerelease bool   `json:"prerelease"`
+}
+
+type cacheRecord struct {
+	CheckedAt     time.Time `json:"checkedAt"`
+	LatestVersion string    `json:"latestVersion,omitempty"`
+	Unavailable   bool      `json:"unavailable,omitempty"`
+}
+
+// Check returns cached status when it is less than 24 hours old. A failed
+// fetch is cached too, preventing unavailable endpoints from being retried by
+// every command.
+func (checker Checker) Check(ctx context.Context) (Result, error) {
+	current, currentOK := parseVersion(checker.CurrentVersion)
+	if !currentOK {
+		return Result{
+			Status:         StatusDevelopment,
+			CurrentVersion: checker.CurrentVersion,
+		}, nil
+	}
+	if checker.CachePath == "" {
+		return Result{}, errors.New("update cache path is required")
+	}
+	now := time.Now().UTC()
+	if checker.Now != nil {
+		now = checker.Now().UTC()
+	}
+	if cached, ok := loadFreshCache(checker.CachePath, now); ok {
+		result, err := resultFromRecord(checker.CurrentVersion, current, cached, true)
+		return result, err
+	}
+	releaseLock, acquired := acquireCheckLock(checker.CachePath, now)
+	if !acquired {
+		return Result{
+			Status:         StatusUnavailable,
+			CurrentVersion: checker.CurrentVersion,
+		}, ErrUnavailable
+	}
+	defer releaseLock()
+	// A separate process may have populated the cache immediately before this
+	// process acquired the lock.
+	if cached, ok := loadFreshCache(checker.CachePath, now); ok {
+		result, err := resultFromRecord(checker.CurrentVersion, current, cached, true)
+		return result, err
+	}
+
+	record := cacheRecord{CheckedAt: now, Unavailable: true}
+	// Publish an in-progress failure sentinel before using the network. Other
+	// processes then remain quiet instead of starting a concurrent check.
+	if err := writeCache(checker.CachePath, record); err != nil {
+		return Result{}, fmt.Errorf("write update cache sentinel: %w", err)
+	}
+	latest, err := checker.fetchLatest(ctx)
+	if err != nil {
+		return Result{
+			Status:         StatusUnavailable,
+			CurrentVersion: checker.CurrentVersion,
+			CheckedAt:      now.Format(time.RFC3339),
+		}, errors.Join(ErrUnavailable, err)
+	}
+	record.LatestVersion = latest
+	record.Unavailable = false
+	if err := writeCache(checker.CachePath, record); err != nil {
+		return Result{}, fmt.Errorf("write update cache: %w", err)
+	}
+	return resultFromRecord(checker.CurrentVersion, current, record, false)
+}
+
+func acquireCheckLock(cachePath string, now time.Time) (func(), bool) {
+	directory := filepath.Dir(cachePath)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return func() {}, false
+	}
+	lockPath := cachePath + ".lock"
+	open := func() (*os.File, error) {
+		return os.OpenFile(lockPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- fixed private cache lock.
+	}
+	lock, err := open()
+	if errors.Is(err, os.ErrExist) {
+		if info, statErr := os.Lstat(lockPath); statErr == nil && info.Mode().IsRegular() &&
+			now.Sub(info.ModTime()) > time.Minute {
+			_ = os.Remove(lockPath)
+			lock, err = open()
+		}
+	}
+	if err != nil {
+		return func() {}, false
+	}
+	return func() {
+		_ = lock.Close()
+		_ = os.Remove(lockPath)
+	}, true
+}
+
+func (checker Checker) fetchLatest(ctx context.Context) (string, error) {
+	endpoint := checker.Endpoint
+	if endpoint == "" {
+		endpoint = DefaultEndpoint
+	}
+	client := checker.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", fmt.Errorf("create release request: %w", err)
+	}
+	request.Header.Set("Accept", "application/vnd.github+json")
+	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	request.Header.Set("User-Agent", "owa-bridge/"+checker.CurrentVersion)
+	response, err := client.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("fetch release metadata: %w", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maximumBody))
+		return "", fmt.Errorf("release endpoint returned HTTP %d", response.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(response.Body, maximumBody+1))
+	if err != nil {
+		return "", fmt.Errorf("read release metadata: %w", err)
+	}
+	if len(data) > maximumBody {
+		return "", errors.New("release metadata exceeds size limit")
+	}
+	var release releaseResponse
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&release); err != nil {
+		return "", fmt.Errorf("decode release metadata: %w", err)
+	}
+	latest, ok := parseVersion(release.TagName)
+	if !ok || latest.prerelease != "" || release.Draft || release.Prerelease {
+		return "", errors.New("latest release is not a stable semantic version")
+	}
+	return latest.String(), nil
+}
+
+func resultFromRecord(currentRaw string, current semanticVersion, record cacheRecord, cached bool) (Result, error) {
+	result := Result{
+		Status:         StatusUnavailable,
+		CurrentVersion: currentRaw,
+		CheckedAt:      record.CheckedAt.Format(time.RFC3339),
+		Cached:         cached,
+	}
+	if record.Unavailable {
+		return result, ErrUnavailable
+	}
+	latest, ok := parseVersion(record.LatestVersion)
+	if !ok || latest.prerelease != "" {
+		return result, ErrUnavailable
+	}
+	result.LatestVersion = latest.String()
+	result.ReleaseURL = "https://github.com/nkiyohara/owa-bridge/releases/tag/" + url.PathEscape(latest.String())
+	comparison := current.Compare(latest)
+	if comparison < 0 {
+		result.Status = StatusAvailable
+		result.UpdateAvailable = true
+	} else {
+		result.Status = StatusCurrent
+	}
+	return result, nil
+}
+
+func loadFreshCache(path string, now time.Time) (cacheRecord, bool) {
+	file, err := os.Open(path) // #nosec G304 -- path is the fixed private application cache.
+	if err != nil {
+		return cacheRecord{}, false
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return cacheRecord{}, false
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maximumCache+1))
+	if err != nil || len(data) > maximumCache {
+		return cacheRecord{}, false
+	}
+	var record cacheRecord
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&record); err != nil {
+		return cacheRecord{}, false
+	}
+	age := now.Sub(record.CheckedAt)
+	if record.CheckedAt.IsZero() || age < 0 || age >= cacheLifetime {
+		return cacheRecord{}, false
+	}
+	return record, true
+}
+
+func writeCache(path string, record cacheRecord) error {
+	data, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	directory := filepath.Dir(path)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(directory, 0o700); err != nil { // #nosec G302 -- private cache directories require owner execute.
+		return err
+	}
+	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
+		return errors.New("update cache path is not a regular file")
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	temporary, err := os.CreateTemp(directory, ".update-*.tmp")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer func() { _ = os.Remove(temporaryPath) }()
+	if err := temporary.Chmod(0o600); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
+}
+
+type semanticVersion struct {
+	major      uint64
+	minor      uint64
+	patch      uint64
+	prerelease string
+}
+
+func parseVersion(value string) (semanticVersion, bool) {
+	value = strings.TrimPrefix(value, "v")
+	core, prerelease, _ := strings.Cut(value, "-")
+	if buildIndex := strings.IndexByte(prerelease, '+'); buildIndex >= 0 {
+		prerelease = prerelease[:buildIndex]
+	}
+	if buildIndex := strings.IndexByte(core, '+'); buildIndex >= 0 {
+		core = core[:buildIndex]
+	}
+	parts := strings.Split(core, ".")
+	if len(parts) != 3 {
+		return semanticVersion{}, false
+	}
+	values := make([]uint64, 3)
+	for index, part := range parts {
+		if part == "" || (len(part) > 1 && part[0] == '0') {
+			return semanticVersion{}, false
+		}
+		parsed, err := strconv.ParseUint(part, 10, 64)
+		if err != nil {
+			return semanticVersion{}, false
+		}
+		values[index] = parsed
+	}
+	return semanticVersion{
+		major: values[0], minor: values[1], patch: values[2], prerelease: prerelease,
+	}, true
+}
+
+func (version semanticVersion) String() string {
+	value := fmt.Sprintf("v%d.%d.%d", version.major, version.minor, version.patch)
+	if version.prerelease != "" {
+		value += "-" + version.prerelease
+	}
+	return value
+}
+
+func (version semanticVersion) Compare(other semanticVersion) int {
+	left := []uint64{version.major, version.minor, version.patch}
+	right := []uint64{other.major, other.minor, other.patch}
+	for index := range left {
+		if left[index] < right[index] {
+			return -1
+		}
+		if left[index] > right[index] {
+			return 1
+		}
+	}
+	if version.prerelease == other.prerelease {
+		return 0
+	}
+	if version.prerelease == "" {
+		return 1
+	}
+	if other.prerelease == "" {
+		return -1
+	}
+	return strings.Compare(version.prerelease, other.prerelease)
+}

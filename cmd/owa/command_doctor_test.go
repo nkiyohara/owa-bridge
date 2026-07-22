@@ -46,7 +46,7 @@ func TestDoctorOfflineProducesContentFreeHealthyReport(t *testing.T) {
 	if !report.Healthy || report.Online || report.Account != "work" {
 		t.Fatalf("unexpected doctor report: %+v", report)
 	}
-	if len(report.Checks) != 5 || report.Checks[4].Status != "skip" {
+	if len(report.Checks) != 6 || report.Checks[2].Name != "update" || report.Checks[5].Status != "skip" {
 		t.Fatalf("unexpected doctor checks: %+v", report.Checks)
 	}
 }

@@ -2,73 +2,91 @@
 
 Local-first Outlook Web mail and calendar for humans, scripts, and AI agents.
 
-`owa-bridge` is a cross-platform CLI and Outlook MCP server that works locally
-through the interactive Outlook Web session you already use—without a
-Microsoft Graph app registration, hosted bridge, or captured password. It is
-built for environments where Graph application access is unavailable.
+`owa-bridge` is a cross-platform CLI and MCP server that works through the
+interactive Outlook Web session you already use. It needs no Microsoft Graph
+app registration, hosted bridge, or captured password, so it fits environments
+where Graph application access is unavailable.
 
 [Website](https://nkiyohara.github.io/owa-bridge/) ·
 [Latest release](https://github.com/nkiyohara/owa-bridge/releases/latest) ·
-[Install](docs/install.md) · [Feature matrix](docs/features.md) ·
-[JSON contract](docs/json.md)
+[Install](docs/install.md) · [MCP guide](docs/mcp.md) ·
+[Feature matrix](docs/features.md) · [JSON contract](docs/json.md)
 
 > [!WARNING]
-> `owa-bridge` 0.3 is an early release over undocumented Outlook Web contracts.
+> `owa-bridge` 0.4 is an early release over undocumented Outlook Web contracts.
 > Use only an account you are authorized to access, review every write, and
 > keep Outlook available for reconciliation after an unknown outcome.
 
-## Why this exists
-
-Outlook automation usually starts with Microsoft Graph. That remains the right
-choice when an organization permits app registration and consent. Some do not.
-`owa-bridge` serves that narrower case without asking a user to defeat MFA,
-Conditional Access, or another sign-in control.
-
-The user signs in interactively in a dedicated browser profile. A local daemon
-owns that session and exposes one typed application core to two adapters:
-
-```text
-Claude Code / Codex ── MCP stdio ─┐
-                                  ├── local IPC ── session owner ── OWA
-Humans / scripts ───── CLI ────────┘                  │
-                                             application / policy
-```
-
-## Design promises
-
-- **Local first.** Mailbox data and authorization are not sent to a
-  project-run cloud service.
-- **Interactive authentication.** The browser completes normal SSO, MFA, and
-  Conditional Access. The CLI never requests a password.
-- **One core, two interfaces.** CLI and MCP execute the same typed use cases
-  and return the same stable result shapes.
-- **Safe by construction.** Reads are metadata-first. Sending and calendar
-  changes use exact, caller-bound `preview -> commit` operations.
-- **No automatic write retry.** Ambiguous outcomes fail closed to avoid
-  duplicate mail, events, or invitations.
-- **No ambient network listener.** MCP uses stdio; daemon IPC uses a Unix
-  socket or Windows named pipe.
-
-See the [architecture](docs/architecture.md),
-[authentication design](docs/authentication.md),
-[protocol boundary](docs/protocol.md), [threat model](docs/threat-model.md), and
-[compatibility evidence](docs/compatibility.md).
-
-## Quick start
-
-Download the archive for your operating system from the
-[latest release](https://github.com/nkiyohara/owa-bridge/releases/latest), then
-verify `checksums.txt` before running it. Full platform instructions and
-Sigstore verification are in [docs/install.md](docs/install.md).
+## Install and sign in
 
 ```console
+# macOS or Linux
+brew install nkiyohara/owa-bridge/owa-bridge
+
+# Windows
+winget install --id nkiyohara.OWABridge --exact
+
+# First run on every platform
 owa config init
-# Set only the final HTTPS Outlook origin used after interactive sign-in.
 owa config validate
-owa login                    # visible browser
-owa login --terminal         # experimental text-only SSH relay
+owa login
 owa doctor --online
 ```
+
+Scoop, direct downloads, checksum verification, Sigstore verification, and
+Linux packages are covered in the [install guide](docs/install.md). Sign-in,
+MFA, and Conditional Access stay inside a dedicated browser profile; the CLI
+never asks for a password.
+
+Released binaries quietly cache a public stable-release check for 24 hours and
+show an update hint only on an interactive terminal. Run `owa update check` at
+any time for explicit status; MCP, completion, and JSON output never receive an
+automatic notice.
+
+## Connect an AI agent
+
+Choose the client you use and run one command:
+
+```console
+owa mcp setup codex
+# or: owa mcp setup claude-code
+# or: owa mcp setup github-copilot
+# or: owa mcp setup gemini-cli
+# or: owa mcp setup qwen-code
+# or: owa mcp setup qoder
+```
+
+Then start a new agent session and ask naturally:
+
+```text
+Check Outlook and summarize the messages that need my attention.
+```
+
+The default connection name is the readable `outlook-web`. Clear server
+instructions and task-oriented tool descriptions help agents discover the
+right mail or calendar tool without naming it explicitly.
+
+For even stronger discovery, install the bundled Agent Skill. In Codex, ask:
+
+```text
+Install the owa-bridge skill from
+https://github.com/nkiyohara/owa-bridge/tree/main/plugins/owa-bridge/skills/owa-bridge
+using $skill-installer.
+```
+
+Claude Code can install the same Skill as a plugin:
+
+```console
+claude plugin marketplace add nkiyohara/owa-bridge
+claude plugin install owa-bridge@owa-bridge
+```
+
+The [MCP guide](docs/mcp.md) covers all seven clients—Codex, Claude Code,
+GitHub Copilot CLI, Gemini CLI, Qwen Code, Qoder, and Kimi Code CLI—plus native
+configuration documents, project scopes, Skill installation, migration from
+the former `owa` connection name, and troubleshooting.
+
+## Use it directly
 
 Metadata-first reads:
 
@@ -101,67 +119,76 @@ printf 'Synthetic agenda.\n' | \
 ```
 
 The first call shows the exact normalized review and changes nothing when
-approval is required. Repeat the same CLI command with `--approve` only after
-checking every recipient and field. MCP keeps preview and commit as separate
-tools and binds the token to the originating process.
+approval is required. Repeat the CLI command with `--approve` only after
+checking every field. MCP keeps preview and commit as separate tools and binds
+the token to the originating process.
 
-## AI agents
+## Why this exists
 
-Register through each client's supported CLI:
+Microsoft Graph remains the right choice when an organization permits app
+registration and consent. `owa-bridge` serves the narrower case where it does
+not, without asking a user to defeat MFA, Conditional Access, or another
+sign-in control.
 
-```console
-owa mcp setup codex
-codex mcp get owa
-
-owa mcp setup claude-code
-claude mcp get owa
+```text
+AI agents ───────── MCP stdio ─┐
+                               ├── local IPC ── session owner ── Outlook Web
+Humans and scripts ──── CLI ───┘                  │
+                                          application / policy
 ```
 
-The MCP server exposes 24 narrow mail and calendar tools. Descriptions and
-annotations identify private untrusted content, side effects, and destructive
-commits; application policy still enforces every operation. Read the
-[MCP guide](docs/mcp.md) and [JSON contract](docs/json.md) for the complete
-agent-facing surface.
+The daemon owns the browser session. CLI and MCP calls enter the same typed
+application core and the same policy boundary; authorization material never
+enters an agent process.
+
+## Design promises
+
+- **Local first.** Mailbox data and authorization are not sent to a
+  project-run cloud service.
+- **Interactive authentication.** The browser completes normal SSO, MFA, and
+  Conditional Access. The CLI never requests a password.
+- **One core, two interfaces.** CLI and MCP execute the same typed use cases
+  and return the same stable result shapes.
+- **Safe by construction.** Reads are metadata-first. Sending and calendar
+  changes use exact, caller-bound `preview -> commit` operations.
+- **No automatic write retry.** Ambiguous outcomes fail closed to avoid
+  duplicate mail, events, or invitations.
+- **No ambient network listener.** MCP uses stdio; daemon IPC uses a Unix
+  socket or Windows named pipe.
+
+See the [architecture](docs/architecture.md),
+[authentication design](docs/authentication.md),
+[protocol boundary](docs/protocol.md), [threat model](docs/threat-model.md), and
+[compatibility evidence](docs/compatibility.md).
 
 ## Current scope
 
-Mail supports folder discovery, metadata list and AQS search, one explicit
-plain-text body read with attachment metadata, bounded attachment retrieval,
-text or HTML drafts and sends, reply/reply-all/forward, bounded file
-attachments, versioned moves, read/unread updates, and reviewed permanent
-deletion.
+Mail supports folder discovery, metadata list and AQS search, explicit body and
+attachment reads, text or HTML drafts and sends, reply/reply-all/forward,
+bounded attachments, versioned moves, read/unread updates, and reviewed
+permanent deletion.
 
 Calendar supports bounded metadata list, event creation with all-day,
-reminder, recurrence, required and optional attendee, and optional Teams-link
-settings. Versioned updates cover subject/body/time/location, all-day status,
-reminders, and complete attendee replacement; cancellation moves an event to
-Deleted Items.
+reminder, recurrence, attendees, and optional Teams-link settings. Versioned
+updates cover subject, body, time, location, all-day status, reminders, and
+complete attendee replacement; cancellation moves an event to Deleted Items.
 
-Explicit shared/delegated mailbox routing is available when the signed-in user
-already has access in Outlook Web. Mailbox-rule mutation, recurrence editing
-after creation, generic property mutation, and delegate-permission management
-are not implemented. General Teams chat, channels, calls, recordings, and
-meeting lifecycle management remain out of scope, as do Microsoft Graph,
-hosted relays, unattended login, and tenant-wide access.
+Explicit shared or delegated mailbox routing is available when the signed-in
+user already has access in Outlook Web. Mailbox-rule mutation, recurrence
+editing after creation, generic property mutation, delegate-permission
+management, general Teams chat, Graph passthrough, hosted relays, unattended
+login, and tenant-wide access are out of scope.
 
-## Distribution
+## Distribution and development
 
-Releases contain macOS, Linux, and Windows binaries for amd64 and arm64. Linux
-also receives deb, RPM, and APK packages. Every archive and package is covered
-by SHA-256 checksums and SPDX and CycloneDX SBOMs; the checksum manifest carries
-a keyless Sigstore bundle.
+Releases contain macOS, Linux, and Windows binaries for amd64 and arm64, plus
+deb, RPM, and APK packages. Every artifact is covered by SHA-256 checksums and
+SPDX and CycloneDX SBOMs; the checksum manifest carries a keyless Sigstore
+bundle. The binaries are not yet Apple-notarized or Windows
+Authenticode-signed—do not weaken operating-system security controls to run
+them.
 
-Homebrew, Scoop, and WinGet installation commands are available in the
-[install guide](docs/install.md). Homebrew uses a source-building Formula;
-Scoop and WinGet bind directly to the checksummed Windows release archives.
-
-The binaries are not yet Apple-notarized or Windows Authenticode-signed. Do not
-weaken operating-system security controls merely to run a download; verify the
-release or build from the reviewed source when local policy requires signing.
-
-## Development
-
-The complete toolchain is checksummed and pinned with `mise`:
+The complete development toolchain is checksummed and pinned with `mise`:
 
 ```console
 mise trust
@@ -183,7 +210,5 @@ grant permissions the signed-in user does not already have in Outlook Web.
 `owa-bridge` is independent and is not affiliated with, endorsed by, or
 sponsored by Microsoft. Microsoft, Outlook, Microsoft 365, and Teams are
 trademarks of the Microsoft group of companies.
-
-## License
 
 Apache-2.0. See [LICENSE](LICENSE).

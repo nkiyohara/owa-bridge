@@ -21,6 +21,7 @@ gate does not authorize bypassing an operating-system or organization control.
 | --- | --- | --- |
 | Release download and checksum | Yes | No |
 | Native launch, config, local IPC | Yes | No |
+| Stable-release update check | Yes | No |
 | Interactive browser login and online doctor | Yes | Mailbox read access |
 | CLI folder, mail, and calendar reads | Recommended | Mailbox read access |
 | Codex and Claude Code MCP reads | Per installed client | Mailbox read access |
@@ -58,7 +59,7 @@ OS and version:
 Architecture:
 Browser and version:
 Deployment class: Microsoft 365 work/school | Outlook.com | other
-Install surface: archive | deb | RPM | APK
+Install surface: Homebrew | WinGet | Scoop | archive | deb | RPM | APK
 Codex version or SKIP:
 Claude Code version or SKIP:
 ```
@@ -68,7 +69,7 @@ request ID, subject, recipient, body, token, or screenshot.
 
 ## 2. Download the release
 
-The current supported release is `v0.3.0`. Change both variables together when
+The current supported release is `v0.4.0`. Change both variables together when
 testing another version.
 
 ### macOS or Linux download
@@ -76,8 +77,8 @@ testing another version.
 Run from a new empty directory:
 
 ```console
-VERSION=v0.3.0
-RELEASE=0.3.0
+VERSION=v0.4.0
+RELEASE=0.4.0
 mkdir owa-test-assets
 gh release download "$VERSION" \
   --repo nkiyohara/owa-bridge \
@@ -90,8 +91,8 @@ cd owa-test-assets
 Run from a new empty directory:
 
 ```powershell
-$Version = "v0.3.0"
-$Release = "0.3.0"
+$Version = "v0.4.0"
+$Release = "0.4.0"
 New-Item -ItemType Directory -Path owa-test-assets | Out-Null
 gh release download $Version `
   --repo nkiyohara/owa-bridge `
@@ -99,8 +100,8 @@ gh release download $Version `
 Set-Location owa-test-assets
 ```
 
-Expected inventory: 38 files consisting of `checksums.txt`, its Sigstore
-bundle, six archives, six native Linux packages, and 24 SBOM documents. No
+Expected inventory: 41 files consisting of `checksums.txt`, its Sigstore
+bundle, seven archives, six native Linux packages, and 26 SBOM documents. No
 filename may contain `~`.
 
 ## 3. Verify every downloaded asset
@@ -204,26 +205,27 @@ compatible disposable host:
 
 ```console
 # Debian or Ubuntu
-sudo apt install ./owa-bridge_0.3.0-1_amd64.deb
+sudo apt install ./owa-bridge_0.4.0-1_amd64.deb
 dpkg -L owa-bridge
 
 # Fedora or another RPM-based distribution
-sudo dnf install ./owa-bridge-0.3.0-1.x86_64.rpm
+sudo dnf install ./owa-bridge-0.4.0-1.x86_64.rpm
 rpm -ql owa-bridge
 
 # Alpine
-sudo apk add ./owa-bridge_0.3.0-r1_x86_64.apk
+sudo apk add ./owa-bridge_0.4.0-r1_x86_64.apk
 apk info -L owa-bridge
 ```
 
 Confirm that the package installs `owa`, the `owa(1)` manual, shell
-completions, the project license, and `third_party_licenses`. Then run
-`owa version --json`. Adjust only the architecture suffix, not the release
-number, for arm64.
+completions, the project license, `third_party_licenses`, and the agent plugin
+under `/usr/share/owa-bridge`. Then run `owa version --json`. Adjust only the
+architecture suffix, not the release number, for arm64.
 
 ## 6. Initialize without Outlook access
 
-These commands must not open a browser or contact Outlook:
+These commands must not open a browser or contact Outlook. The offline doctor
+may read bounded public release metadata unless update checks are disabled:
 
 ```console
 owa config init
@@ -248,6 +250,22 @@ generated `https://outlook.cloud.microsoft` origin, edit only
 `accounts.<alias>.origin` to that final HTTPS origin with no path. Do not add an
 identity-provider origin or a redirecting vanity host. Validate again and stop
 the daemon after every config edit.
+
+### 6.1 Verify update-check isolation
+
+```console
+owa update check
+owa update check --json
+```
+
+The first command should report the current stable release or an
+installation-specific upgrade action. The second output must be one valid JSON
+object with no human `Update available:` line before or after it. Repeat it and
+confirm `cached` is `true`; do not expect a second network request within 24
+hours. Temporarily set `updates.disable_automatic_checks = true`, validate the
+config, and confirm the offline doctor's `update` row is `skip`. Restore the
+setting afterward. MCP and completion byte streams are covered by deterministic
+tests and must never be modified for a manual notice.
 
 ## 7. Run the bounded read-only compatibility check
 
@@ -331,7 +349,7 @@ Register through the official client CLI and inspect the entry:
 
 ```console
 owa mcp setup codex
-codex mcp get owa
+codex mcp get outlook-web
 ```
 
 In a new Codex session, ask it to perform only these read-only operations, one
@@ -361,7 +379,7 @@ Register and inspect the entry:
 
 ```console
 owa mcp setup claude-code --scope user
-claude mcp get owa
+claude mcp get outlook-web
 ```
 
 In a new Claude Code session, use the same three read-only prompts from the
@@ -521,9 +539,10 @@ Complete this table locally:
 
 | Gate                                      | Result | Content-free note |
 | ----------------------------------------- | ------ | ----------------- |
-| Checksum 36/36                            |        |                   |
+| Checksum 39/39                            |        |                   |
 | Native archive launch                     |        |                   |
 | Native package, if applicable             |        |                   |
+| Stable-release update check               |        |                   |
 | Config and offline doctor                 |        |                   |
 | Local IPC start/status/stop               |        |                   |
 | Visible login                             |        |                   |
