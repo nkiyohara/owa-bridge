@@ -173,12 +173,47 @@ jobs:
           name: package-catalogs-${{ github.ref_name }}
           path: catalogs
 
+      - name: Guard against duplicate WinGet pull requests
+        id: winget_pr_guard
+        shell: pwsh
+        env:
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINGET_CREATE_GITHUB_TOKEN)) {
+            throw "WINGET_CREATE_GITHUB_TOKEN is not configured"
+          }
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $headers = @{
+            Authorization = "Bearer $env:WINGET_CREATE_GITHUB_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $query = [uri]::EscapeDataString(
+            "repo:microsoft/winget-pkgs is:pr is:open author:nkiyohara in:title nkiyohara.OWABridge"
+          )
+          $response = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/search/issues?q=$query&per_page=100"
+          $open = @($response.items)
+          $sameVersion = @($open | Where-Object {
+            $_.title -match [regex]::Escape($version)
+          })
+          if ($sameVersion.Count -gt 0) {
+            "skip=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "WinGet pull request for $version already exists; submission is current."
+          } elseif ($open.Count -gt 0) {
+            $urls = ($open | ForEach-Object { $_.html_url }) -join ", "
+            throw "An earlier WinGet pull request is still open: $urls"
+          } else {
+            "skip=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
       - name: Set up .NET for WinGetCreate
+        if: steps.winget_pr_guard.outputs.skip != 'true'
         uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d # v5.0.0
         with:
           dotnet-version: 6.0.428
 
       - name: Install pinned WinGetCreate
+        if: steps.winget_pr_guard.outputs.skip != 'true'
         shell: pwsh
         run: |
           $url = "https://github.com/microsoft/winget-create/releases/download/v1.12.8.0/wingetcreate.exe"
@@ -190,13 +225,11 @@ jobs:
           }
 
       - name: Submit verified WinGet manifests
+        if: steps.winget_pr_guard.outputs.skip != 'true'
         shell: pwsh
         env:
           WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:WINGET_CREATE_GITHUB_TOKEN)) {
-            throw "WINGET_CREATE_GITHUB_TOKEN is not configured"
-          }
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
           $manifest = Join-Path "catalogs/winget/manifests/n/nkiyohara/OWABridge" $version
           ./wingetcreate.exe submit --prtitle "Update nkiyohara.OWABridge to $version" --no-open $manifest
