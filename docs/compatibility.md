@@ -28,7 +28,12 @@ mailbox observations.
 | All-day/reminder/recurrence/attendee replacement | Typed validation + OWA JSON contracts | Not run | Deterministic only |
 | Codex MCP client | Native CLI registration | Empty calendar tool call | Observed |
 | Claude Code MCP client | Native CLI registration | Stdio health check only | Partial |
-| Distribution | 6 archives, 6 packages, 24 SBOMs | Local + release CI | Verified build |
+| GitHub Copilot CLI MCP client | Native CLI plan + JSON schema | Not run | Deterministic only |
+| Gemini CLI MCP client | Native CLI plan + JSON schema | Not run | Deterministic only |
+| Qwen Code MCP client | Native CLI plan + JSON schema | Not run | Deterministic only |
+| Qoder MCP client | Native CLI plan + JSON schema | Not run | Deterministic only |
+| Kimi Code MCP client | Native JSON schema | Not run | Deterministic only |
+| Distribution | 7 archives, 6 packages, 26 SBOMs | Local + release CI | Verified build |
 
 <!-- markdownlint-enable MD013 -->
 

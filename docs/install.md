@@ -1,6 +1,6 @@
 # Install and verify
 
-`owa-bridge` 0.3 is an early release over undocumented Outlook Web contracts.
+`owa-bridge` 0.4 is an early release over undocumented Outlook Web contracts.
 Use only an authorized account and review the
 [compatibility evidence](compatibility.md) before enabling writes.
 
@@ -45,7 +45,7 @@ a catalog yet, use the signed GitHub release directly.
 Use the release page in a browser or GitHub CLI. For example:
 
 ```console
-VERSION=v0.3.0
+VERSION=v0.4.0
 mkdir owa-release
 gh release download "$VERSION" \
   --repo nkiyohara/owa-bridge \
@@ -145,30 +145,40 @@ Outlook.
 
 ## Configure an MCP client
 
-After initializing `owa`, register it through each client's official CLI:
+After initializing `owa`, register the client you use with one command:
 
 ```console
 owa mcp setup codex
-codex mcp get owa
-
-owa mcp setup claude-code
-claude mcp get owa
+# or: owa mcp setup claude-code
+# or: owa mcp setup github-copilot
+# or: owa mcp setup gemini-cli
+# or: owa mcp setup qwen-code
+# or: owa mcp setup qoder
 ```
 
-Use `--dry-run` to inspect the exact process invocation first. Claude Code also
-accepts `--scope local|project|user`. Neither setup path parses or rewrites
-unrelated client settings.
+Start a new agent session, then ask it to check Outlook without naming a tool.
+Use `--dry-run` to inspect the exact process invocation first. Scope flags are
+available for Claude Code, Gemini CLI, Qwen Code, and Qoder. Setup delegates to
+the installed client's official command and does not rewrite unrelated
+settings.
 
-For offline review, project configuration, or advanced Codex timeouts and
-write-aware approval defaults, print a native document:
+For offline review, Kimi Code CLI, project configuration, or advanced client
+settings, print the client's native document:
 
 ```console
 owa mcp config codex
 owa mcp config claude-code
+owa mcp config github-copilot
+owa mcp config gemini-cli
+owa mcp config qwen-code
+owa mcp config qoder
+owa mcp config kimi-code
 ```
 
-See [MCP integration](mcp.md) and
-[interactive authentication](authentication.md) before the first login.
+The default connection name is `outlook-web`. See [MCP integration](mcp.md)
+for Agent Skill installation, verification commands, migration from `owa`, and
+troubleshooting. Read [interactive authentication](authentication.md) before
+the first login.
 
 ## Package catalogs
 

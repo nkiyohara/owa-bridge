@@ -75,7 +75,8 @@ The verifier requires:
 - SPDX JSON and CycloneDX JSON SBOMs for every archive and package;
 - one SHA-256 manifest;
 - license, README, security policy, installation and MCP guides, manual page,
-  and all three completion scripts inside each applicable artifact;
+  all three completion scripts, Agent Skill, dual client plugin manifests, and
+  marketplace catalogs inside each applicable artifact;
 - a source-building Homebrew Formula plus Scoop and WinGet manifests that
   reference the same verified source or binary artifacts.
 

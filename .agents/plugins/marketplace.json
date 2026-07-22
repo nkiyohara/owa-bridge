@@ -1,0 +1,20 @@
+{
+  "name": "owa-bridge",
+  "interface": {
+    "displayName": "OWA Bridge"
+  },
+  "plugins": [
+    {
+      "name": "owa-bridge",
+      "source": {
+        "source": "local",
+        "path": "./plugins/owa-bridge"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -39,6 +39,10 @@ jobs:
           test -s site/robots.txt
           grep -Fq '<html lang="en">' site/index.html
           grep -Fq 'https://nkiyohara.github.io/owa-bridge/' site/index.html
+          grep -Fq 'outlook-web' site/index.html
+          grep -Fq 'owa mcp setup github-copilot' site/index.html
+          grep -Fq 'owa mcp setup gemini-cli' site/index.html
+          grep -Fq 'owa mcp setup qwen-code' site/index.html
           test -z "$(find site -type l -print -quit)"
 
       - name: Configure GitHub Pages

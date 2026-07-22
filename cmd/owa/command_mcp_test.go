@@ -56,13 +56,103 @@ func TestMCPConfigGeneratorsProduceNativeClientDocuments(t *testing.T) {
 			},
 			decode: func(t *testing.T, data []byte) {
 				t.Helper()
-				var document claudeMCPDocument
+				var document jsonMCPDocument
 				if err := json.Unmarshal(data, &document); err != nil {
 					t.Fatalf("decode Claude Code document: %v", err)
 				}
 				server := document.Servers["outlook_work"]
 				if server.Type != "stdio" || server.Command != executable {
 					t.Fatalf("unexpected Claude Code server: %+v", server)
+				}
+			},
+		},
+		{
+			name: "GitHub Copilot CLI JSON",
+			arguments: []string{
+				"--config", configPath, "mcp", "config", "github-copilot",
+				"--name", "outlook_work", "--executable", executable,
+			},
+			decode: func(t *testing.T, data []byte) {
+				t.Helper()
+				var document jsonMCPDocument
+				if err := json.Unmarshal(data, &document); err != nil {
+					t.Fatalf("decode GitHub Copilot CLI document: %v", err)
+				}
+				server := document.Servers["outlook_work"]
+				if server.Type != "stdio" || !reflect.DeepEqual(server.Tools, []string{"*"}) || server.TimeoutMS != 360_000 {
+					t.Fatalf("unexpected GitHub Copilot CLI server: %+v", server)
+				}
+			},
+		},
+		{
+			name: "Gemini CLI JSON",
+			arguments: []string{
+				"--config", configPath, "mcp", "config", "gemini-cli",
+				"--name", "outlook_work", "--executable", executable,
+			},
+			decode: func(t *testing.T, data []byte) {
+				t.Helper()
+				var document jsonMCPDocument
+				if err := json.Unmarshal(data, &document); err != nil {
+					t.Fatalf("decode Gemini CLI document: %v", err)
+				}
+				server := document.Servers["outlook_work"]
+				if server.Command != executable || server.Description == "" || server.TimeoutMS != 360_000 {
+					t.Fatalf("unexpected Gemini CLI server: %+v", server)
+				}
+			},
+		},
+		{
+			name: "Qwen Code JSON",
+			arguments: []string{
+				"--config", configPath, "mcp", "config", "qwen-code",
+				"--name", "outlook_work", "--executable", executable,
+			},
+			decode: func(t *testing.T, data []byte) {
+				t.Helper()
+				var document jsonMCPDocument
+				if err := json.Unmarshal(data, &document); err != nil {
+					t.Fatalf("decode Qwen Code document: %v", err)
+				}
+				server := document.Servers["outlook_work"]
+				if server.Command != executable || server.Type != "" || server.Enabled != nil {
+					t.Fatalf("unexpected Qwen Code server: %+v", server)
+				}
+			},
+		},
+		{
+			name: "Qoder JSON",
+			arguments: []string{
+				"--config", configPath, "mcp", "config", "qoder",
+				"--name", "outlook_work", "--executable", executable,
+			},
+			decode: func(t *testing.T, data []byte) {
+				t.Helper()
+				var document jsonMCPDocument
+				if err := json.Unmarshal(data, &document); err != nil {
+					t.Fatalf("decode Qoder document: %v", err)
+				}
+				server := document.Servers["outlook_work"]
+				if server.Command != executable || len(server.Arguments) != 4 {
+					t.Fatalf("unexpected Qoder server: %+v", server)
+				}
+			},
+		},
+		{
+			name: "Kimi Code JSON",
+			arguments: []string{
+				"--config", configPath, "mcp", "config", "kimi-code",
+				"--name", "outlook_work", "--executable", executable,
+			},
+			decode: func(t *testing.T, data []byte) {
+				t.Helper()
+				var document jsonMCPDocument
+				if err := json.Unmarshal(data, &document); err != nil {
+					t.Fatalf("decode Kimi Code document: %v", err)
+				}
+				server := document.Servers["outlook_work"]
+				if server.Enabled == nil || !*server.Enabled || server.ToolTimeoutMS != 360_000 {
+					t.Fatalf("unexpected Kimi Code server: %+v", server)
 				}
 			},
 		},
@@ -145,6 +235,80 @@ func TestMCPSetupUsesOfficialClientCommands(t *testing.T) {
 			},
 			wantMessage: "Registered MCP server \"outlook_work\" with Claude Code",
 		},
+		{
+			name:   "GitHub Copilot CLI",
+			client: "copilot",
+			wantArgs: []string{
+				"mcp", "add", "outlook_work",
+				"--type", "stdio", "--tools", "*", "--timeout", "360000",
+				"--", executable, "--config", configPath, "mcp", "serve",
+			},
+			run: func(app *runtime) error {
+				command := mcpGitHubCopilotSetupCommand{mcpSetupFlags: mcpSetupFlags{
+					mcpClientConfigFlags: mcpClientConfigFlags{Name: "outlook_work", Executable: executable},
+				}}
+				return command.Run(app)
+			},
+			wantMessage: "Registered MCP server \"outlook_work\" with GitHub Copilot CLI",
+		},
+		{
+			name:   "Gemini CLI",
+			client: "gemini",
+			wantArgs: []string{
+				"mcp", "add", "--scope", "project",
+				"--description", "Local-first Outlook Web mail and calendar",
+				"--timeout", "360000", "outlook_work", executable, "--",
+				"--config", configPath, "mcp", "serve",
+			},
+			run: func(app *runtime) error {
+				command := mcpGeminiCLISetupCommand{
+					mcpSetupFlags: mcpSetupFlags{mcpClientConfigFlags: mcpClientConfigFlags{
+						Name: "outlook_work", Executable: executable,
+					}},
+					Scope: "project",
+				}
+				return command.Run(app)
+			},
+			wantMessage: "Registered MCP server \"outlook_work\" with Gemini CLI",
+		},
+		{
+			name:   "Qwen Code",
+			client: "qwen",
+			wantArgs: []string{
+				"mcp", "add", "--scope", "project",
+				"--description", "Local-first Outlook Web mail and calendar",
+				"outlook_work", executable,
+				"--config", configPath, "mcp", "serve",
+			},
+			run: func(app *runtime) error {
+				command := mcpQwenCodeSetupCommand{
+					mcpSetupFlags: mcpSetupFlags{mcpClientConfigFlags: mcpClientConfigFlags{
+						Name: "outlook_work", Executable: executable,
+					}},
+					Scope: "project",
+				}
+				return command.Run(app)
+			},
+			wantMessage: "Registered MCP server \"outlook_work\" with Qwen Code",
+		},
+		{
+			name:   "Qoder",
+			client: "qodercli",
+			wantArgs: []string{
+				"mcp", "add", "-s", "user", "outlook_work", "--", executable,
+				"--config", configPath, "mcp", "serve",
+			},
+			run: func(app *runtime) error {
+				command := mcpQoderSetupCommand{
+					mcpSetupFlags: mcpSetupFlags{mcpClientConfigFlags: mcpClientConfigFlags{
+						Name: "outlook_work", Executable: executable,
+					}},
+					Scope: "user",
+				}
+				return command.Run(app)
+			},
+			wantMessage: "Registered MCP server \"outlook_work\" with Qoder",
+		},
 	}
 
 	for _, test := range tests {
@@ -174,7 +338,32 @@ func TestMCPSetupUsesOfficialClientCommands(t *testing.T) {
 			if !strings.Contains(stdout.String(), test.wantMessage) {
 				t.Fatalf("stdout = %q, want message %q", stdout.String(), test.wantMessage)
 			}
+			if !strings.Contains(stdout.String(), "Start a new ") {
+				t.Fatalf("stdout = %q, want fresh-session guidance", stdout.String())
+			}
 		})
+	}
+}
+
+func TestMCPConfigDefaultsToDescriptiveServerName(t *testing.T) {
+	t.Parallel()
+
+	executable := filepath.Join(t.TempDir(), "owa")
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run(t.Context(), []string{
+		"--config", configPath, "mcp", "config", "qwen-code", "--executable", executable,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run() code = %d, stderr = %q", code, stderr.String())
+	}
+	var document jsonMCPDocument
+	if err := json.Unmarshal(stdout.Bytes(), &document); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := document.Servers["outlook-web"]; !exists {
+		t.Fatalf("default server name missing from %#v", document.Servers)
 	}
 }
 

@@ -33,6 +33,9 @@ jobs:
       - name: Verify modules
         run: go mod tidy && git diff --exit-code -- go.mod go.sum
 
+      - name: Check Go formatting
+        run: test -z "$(gofmt -l $(rg --files -g '*.go' -g '!vendor/**'))"
+
       - name: Vet
         run: go vet ./...
 

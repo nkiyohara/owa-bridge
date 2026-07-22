@@ -68,7 +68,7 @@ request ID, subject, recipient, body, token, or screenshot.
 
 ## 2. Download the release
 
-The current supported release is `v0.3.0`. Change both variables together when
+The current supported release is `v0.4.0`. Change both variables together when
 testing another version.
 
 ### macOS or Linux download
@@ -76,8 +76,8 @@ testing another version.
 Run from a new empty directory:
 
 ```console
-VERSION=v0.3.0
-RELEASE=0.3.0
+VERSION=v0.4.0
+RELEASE=0.4.0
 mkdir owa-test-assets
 gh release download "$VERSION" \
   --repo nkiyohara/owa-bridge \
@@ -90,8 +90,8 @@ cd owa-test-assets
 Run from a new empty directory:
 
 ```powershell
-$Version = "v0.3.0"
-$Release = "0.3.0"
+$Version = "v0.4.0"
+$Release = "0.4.0"
 New-Item -ItemType Directory -Path owa-test-assets | Out-Null
 gh release download $Version `
   --repo nkiyohara/owa-bridge `
@@ -99,8 +99,8 @@ gh release download $Version `
 Set-Location owa-test-assets
 ```
 
-Expected inventory: 38 files consisting of `checksums.txt`, its Sigstore
-bundle, six archives, six native Linux packages, and 24 SBOM documents. No
+Expected inventory: 41 files consisting of `checksums.txt`, its Sigstore
+bundle, seven archives, six native Linux packages, and 26 SBOM documents. No
 filename may contain `~`.
 
 ## 3. Verify every downloaded asset
@@ -204,22 +204,22 @@ compatible disposable host:
 
 ```console
 # Debian or Ubuntu
-sudo apt install ./owa-bridge_0.3.0-1_amd64.deb
+sudo apt install ./owa-bridge_0.4.0-1_amd64.deb
 dpkg -L owa-bridge
 
 # Fedora or another RPM-based distribution
-sudo dnf install ./owa-bridge-0.3.0-1.x86_64.rpm
+sudo dnf install ./owa-bridge-0.4.0-1.x86_64.rpm
 rpm -ql owa-bridge
 
 # Alpine
-sudo apk add ./owa-bridge_0.3.0-r1_x86_64.apk
+sudo apk add ./owa-bridge_0.4.0-r1_x86_64.apk
 apk info -L owa-bridge
 ```
 
 Confirm that the package installs `owa`, the `owa(1)` manual, shell
-completions, the project license, and `third_party_licenses`. Then run
-`owa version --json`. Adjust only the architecture suffix, not the release
-number, for arm64.
+completions, the project license, `third_party_licenses`, and the agent plugin
+under `/usr/share/owa-bridge`. Then run `owa version --json`. Adjust only the
+architecture suffix, not the release number, for arm64.
 
 ## 6. Initialize without Outlook access
 
@@ -331,7 +331,7 @@ Register through the official client CLI and inspect the entry:
 
 ```console
 owa mcp setup codex
-codex mcp get owa
+codex mcp get outlook-web
 ```
 
 In a new Codex session, ask it to perform only these read-only operations, one
@@ -361,7 +361,7 @@ Register and inspect the entry:
 
 ```console
 owa mcp setup claude-code --scope user
-claude mcp get owa
+claude mcp get outlook-web
 ```
 
 In a new Claude Code session, use the same three read-only prompts from the

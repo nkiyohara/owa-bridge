@@ -88,6 +88,22 @@ archives:
         info:
           mode: 0644
           mtime: "{{ .CommitDate }}"
+      - src: plugins/owa-bridge/README.md
+        info:
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+      - src: plugins/owa-bridge/**/*
+        info:
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+      - src: .agents/plugins/marketplace.json
+        info:
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+      - src: .claude-plugin/marketplace.json
+        info:
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
       - src: completions/owa.bash
         info:
           mode: 0644
@@ -167,6 +183,22 @@ nfpms:
           mtime: "{{ .CommitDate }}"
       - src: manpages/owa.1
         dst: /usr/share/man/man1/owa.1
+        file_info:
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+      - src: plugins/owa-bridge/
+        dst: /usr/share/owa-bridge/plugins/owa-bridge
+        type: tree
+        file_info:
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+      - src: .agents/plugins/marketplace.json
+        dst: /usr/share/owa-bridge/.agents/plugins/marketplace.json
+        file_info:
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+      - src: .claude-plugin/marketplace.json
+        dst: /usr/share/owa-bridge/.claude-plugin/marketplace.json
         file_info:
           mode: 0644
           mtime: "{{ .CommitDate }}"
