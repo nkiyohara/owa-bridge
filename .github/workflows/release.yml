@@ -21,7 +21,7 @@ jobs:
       id-token: write # Exchange GitHub OIDC for the keyless signing certificate.
     steps:
       - name: Check out source and tags
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -90,3 +90,113 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-owned-catalogs:
+    name: Publish Homebrew and Scoop catalogs
+    if: ${{ !contains(github.ref_name, '-') }}
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read # Download the verified catalog artifact from this run.
+      contents: read
+    steps:
+      - name: Download verified package-catalog manifests
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: package-catalogs-${{ github.ref_name }}
+          path: catalogs
+
+      - name: Check out Homebrew tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: nkiyohara/homebrew-owa-bridge
+          path: repositories/homebrew
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          # The following push requires this repo-scoped deploy key; no later step uploads artifacts.
+          persist-credentials: true # zizmor: ignore[artipacked]
+
+      - name: Publish Homebrew Formula
+        run: |
+          install -m 0644 \
+            catalogs/homebrew/Formula/owa-bridge.rb \
+            repositories/homebrew/Formula/owa-bridge.rb
+          git -C repositories/homebrew diff --check
+          if git -C repositories/homebrew diff --quiet -- Formula/owa-bridge.rb; then
+            echo "Homebrew Formula is already current."
+            exit 0
+          fi
+          git -C repositories/homebrew config user.name "github-actions[bot]"
+          git -C repositories/homebrew config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C repositories/homebrew add Formula/owa-bridge.rb
+          git -C repositories/homebrew commit -m "chore: update owa-bridge to ${GITHUB_REF_NAME#v}"
+          git -C repositories/homebrew push origin HEAD:main
+
+      - name: Check out Scoop bucket
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: nkiyohara/scoop-owa-bridge
+          path: repositories/scoop
+          ssh-key: ${{ secrets.SCOOP_BUCKET_DEPLOY_KEY }}
+          # The following push requires this repo-scoped deploy key; no later step uploads artifacts.
+          persist-credentials: true # zizmor: ignore[artipacked]
+
+      - name: Publish Scoop manifest
+        run: |
+          install -m 0644 \
+            catalogs/scoop/owa-bridge.json \
+            repositories/scoop/owa-bridge.json
+          git -C repositories/scoop diff --check
+          if git -C repositories/scoop diff --quiet -- owa-bridge.json; then
+            echo "Scoop manifest is already current."
+            exit 0
+          fi
+          git -C repositories/scoop config user.name "github-actions[bot]"
+          git -C repositories/scoop config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C repositories/scoop add owa-bridge.json
+          git -C repositories/scoop commit -m "chore: update owa-bridge to ${GITHUB_REF_NAME#v}"
+          git -C repositories/scoop push origin HEAD:main
+
+  submit-winget:
+    name: Submit WinGet manifest
+    if: ${{ !contains(github.ref_name, '-') }}
+    needs: release
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read # Download the verified catalog artifact from this run.
+      contents: read
+    steps:
+      - name: Download verified package-catalog manifests
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: package-catalogs-${{ github.ref_name }}
+          path: catalogs
+
+      - name: Set up .NET for WinGetCreate
+        uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d # v5.0.0
+        with:
+          dotnet-version: 6.0.428
+
+      - name: Install pinned WinGetCreate
+        shell: pwsh
+        run: |
+          $url = "https://github.com/microsoft/winget-create/releases/download/v1.12.8.0/wingetcreate.exe"
+          $expected = "8bd738851b524885410112678e3771b341c5c716de60fbbecb88ab0a363ed85d"
+          Invoke-WebRequest $url -OutFile wingetcreate.exe
+          $actual = (Get-FileHash wingetcreate.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "WinGetCreate checksum mismatch: $actual"
+          }
+
+      - name: Submit verified WinGet manifests
+        shell: pwsh
+        env:
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINGET_CREATE_GITHUB_TOKEN)) {
+            throw "WINGET_CREATE_GITHUB_TOKEN is not configured"
+          }
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $manifest = Join-Path "catalogs/winget/manifests/n/nkiyohara/OWABridge" $version
+          ./wingetcreate.exe submit --prtitle "Update nkiyohara.OWABridge to $version" --no-open $manifest

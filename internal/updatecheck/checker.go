@@ -20,8 +20,9 @@ import (
 const (
 	// DefaultEndpoint returns the latest published non-prerelease GitHub release.
 	DefaultEndpoint = "https://api.github.com/repos/nkiyohara/owa-bridge/releases/latest"
+	cacheFormat     = 1
 	cacheLifetime   = 24 * time.Hour
-	maximumBody     = 64 << 10
+	maximumBody     = 1 << 20
 	maximumCache    = 8 << 10
 )
 
@@ -70,6 +71,7 @@ type releaseResponse struct {
 }
 
 type cacheRecord struct {
+	Format        int       `json:"format"`
 	CheckedAt     time.Time `json:"checkedAt"`
 	LatestVersion string    `json:"latestVersion,omitempty"`
 	Unavailable   bool      `json:"unavailable,omitempty"`
@@ -112,7 +114,7 @@ func (checker Checker) Check(ctx context.Context) (Result, error) {
 		return result, err
 	}
 
-	record := cacheRecord{CheckedAt: now, Unavailable: true}
+	record := cacheRecord{Format: cacheFormat, CheckedAt: now, Unavailable: true}
 	// Publish an in-progress failure sentinel before using the network. Other
 	// processes then remain quiet instead of starting a concurrent check.
 	if err := writeCache(checker.CachePath, record); err != nil {
@@ -248,6 +250,9 @@ func loadFreshCache(path string, now time.Time) (cacheRecord, bool) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&record); err != nil {
+		return cacheRecord{}, false
+	}
+	if record.Format != cacheFormat {
 		return cacheRecord{}, false
 	}
 	age := now.Sub(record.CheckedAt)

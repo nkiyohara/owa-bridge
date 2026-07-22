@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -48,6 +50,51 @@ func TestCheckerCachesSuccessfulResultForTwentyFourHours(t *testing.T) {
 	third, err := checker.Check(t.Context())
 	if err != nil || third.Cached || third.LatestVersion != "v1.2.0" || requests != 2 {
 		t.Fatalf("expired Check() = %+v, %v; requests=%d", third, err, requests)
+	}
+}
+
+func TestCheckerAcceptsLargeGitHubReleaseMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write([]byte(`{"tag_name":"v1.1.0","draft":false,"prerelease":false,"assets":"` +
+			strings.Repeat("a", 128<<10) + `"}`))
+	}))
+	defer server.Close()
+
+	checker := Checker{
+		CurrentVersion: "1.0.0",
+		CachePath:      filepath.Join(t.TempDir(), "latest.json"),
+		Endpoint:       server.URL,
+		Client:         server.Client(),
+	}
+	result, err := checker.Check(t.Context())
+	if err != nil || result.Status != StatusAvailable || result.LatestVersion != "v1.1.0" {
+		t.Fatalf("Check() = %+v, %v", result, err)
+	}
+}
+
+func TestCheckerInvalidatesLegacyFailureCache(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		requests++
+		_, _ = writer.Write([]byte(`{"tag_name":"v1.0.0","draft":false,"prerelease":false}`))
+	}))
+	defer server.Close()
+
+	cachePath := filepath.Join(t.TempDir(), "latest.json")
+	legacy := `{"checkedAt":"2026-07-22T10:00:00Z","unavailable":true}` + "\n"
+	if err := os.WriteFile(cachePath, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	checker := Checker{
+		CurrentVersion: "1.0.0",
+		CachePath:      cachePath,
+		Endpoint:       server.URL,
+		Client:         server.Client(),
+		Now:            func() time.Time { return time.Date(2026, 7, 22, 11, 0, 0, 0, time.UTC) },
+	}
+	result, err := checker.Check(t.Context())
+	if err != nil || result.Status != StatusCurrent || result.Cached || requests != 1 {
+		t.Fatalf("Check() = %+v, %v; requests=%d", result, err, requests)
 	}
 }
 
