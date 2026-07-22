@@ -3,6 +3,24 @@
 All notable user-facing changes are recorded here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.4.1 - 2026-07-22
+
+### Update checking
+
+- Accept the full GitHub latest-release response after the release asset set
+  grew beyond the former 64 KiB safety limit.
+- Version the private update cache so this fix discards failure records written
+  by affected builds instead of replaying them for 24 hours.
+
+### Catalog publication
+
+- Publish each stable release's verified Homebrew and Scoop manifests to their
+  dedicated repositories automatically.
+- Submit the same verified WinGet manifests for Microsoft's validation and
+  review with a checksum-pinned WinGetCreate client.
+- Keep catalog credentials least-privilege and skip every catalog for
+  prereleases.
+
 ## 0.4.0 - 2026-07-22
 
 ### Agent discovery

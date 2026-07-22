@@ -35,7 +35,7 @@ so SBOMs are reproducible from the source commit.
 3. Confirm `SECURITY.md`, compatibility evidence, and release notes match the
    intended SemVer support level.
 4. Create an annotated tag such as `v0.1.0` on the exact `main` commit.
-5. Push only that tag and monitor the Release workflow.
+5. Push only that tag and monitor the release and package-catalog jobs.
 6. Download the published assets and independently verify the checksum and
    Sigstore bundle using [install.md](install.md).
 
@@ -85,12 +85,26 @@ not itself listed inside `checksums.txt`.
 
 ## Package catalogs
 
-Catalog publication remains separate from release creation. The release job
-renders, verifies, and preserves all three formats as a short-lived Actions
-artifact. The `homebrew-owa-bridge` tap and `scoop-owa-bridge` bucket update
-only from a public release and its checksum manifest. WinGet receives the same
-Windows archive URLs and hashes through a separately reviewed upstream pull
-request.
+Catalog publication runs only after a stable release is public. The release
+job renders, verifies, and preserves all three formats as a short-lived Actions
+artifact. Follow-up jobs consume that exact artifact: they push the Homebrew
+Formula and Scoop manifest to their dedicated catalogs and submit the WinGet
+manifests for upstream review. Prereleases never enter a package catalog.
+
+Configure these repository secrets before publishing a stable tag:
+
+- `HOMEBREW_TAP_DEPLOY_KEY`: private half of a write-enabled deploy key scoped
+  only to `nkiyohara/homebrew-owa-bridge`.
+- `SCOOP_BUCKET_DEPLOY_KEY`: private half of a write-enabled deploy key scoped
+  only to `nkiyohara/scoop-owa-bridge`.
+- `WINGET_CREATE_GITHUB_TOKEN`: dedicated classic GitHub token with only the
+  `public_repo` scope. WinGetCreate does not support fine-grained tokens.
+
+The owned catalogs update idempotently and run their own installation tests on
+push. WinGet remains available only after Microsoft's validation and review of
+the submitted pull request. A catalog-publication failure does not mutate or
+replace the already verified GitHub release; fix the credential or upstream
+condition and rerun the failed job.
 
 Homebrew intentionally builds the tagged source archive. Until macOS binaries
 are signed and notarized, the project does not publish a binary Cask that would

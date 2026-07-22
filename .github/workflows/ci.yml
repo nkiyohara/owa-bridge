@@ -34,7 +34,9 @@ jobs:
         run: go mod tidy && git diff --exit-code -- go.mod go.sum
 
       - name: Check Go formatting
-        run: test -z "$(gofmt -l $(rg --files -g '*.go' -g '!vendor/**'))"
+        run: |
+          mapfile -t go_files < <(rg --files -g '*.go' -g '!vendor/**')
+          test -z "$(gofmt -l "${go_files[@]}")"
 
       - name: Vet
         run: go vet ./...
