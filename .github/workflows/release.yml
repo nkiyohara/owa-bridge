@@ -102,7 +102,7 @@ jobs:
       contents: read
     steps:
       - name: Download verified package-catalog manifests
-        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: package-catalogs-${{ github.ref_name }}
           path: catalogs
@@ -168,7 +168,7 @@ jobs:
       contents: read
     steps:
       - name: Download verified package-catalog manifests
-        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: package-catalogs-${{ github.ref_name }}
           path: catalogs
@@ -208,7 +208,7 @@ jobs:
 
       - name: Set up .NET for WinGetCreate
         if: steps.winget_pr_guard.outputs.skip != 'true'
-        uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d # v5.0.0
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 6.0.428
 
