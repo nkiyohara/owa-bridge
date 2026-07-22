@@ -180,6 +180,53 @@ for Agent Skill installation, verification commands, migration from `owa`, and
 troubleshooting. Read [interactive authentication](authentication.md) before
 the first login.
 
+## Stay current
+
+Check the latest stable public release explicitly:
+
+```console
+owa update check
+owa update check --json
+```
+
+Released binaries also perform a quiet check after successful, human-facing
+interactive commands. A success or failure is cached in the private state
+directory for 24 hours. Network failure never fails an Outlook operation, and
+automatic notices never enter MCP stdio, generated completions, daemon output,
+or any command using `--json`.
+
+The request is an unauthenticated `GET` for the repository's public latest
+release metadata. It sends the owa-bridge version as its user agent and sends
+no mailbox, account, tenant, configuration, or machine identifier. Disable
+automatic checks while retaining the explicit command with either:
+
+```toml
+[updates]
+disable_automatic_checks = true
+```
+
+```console
+export OWA_NO_UPDATE_CHECK=1
+```
+
+When a newer stable version exists, the hint follows the detected installation
+surface:
+
+<!-- markdownlint-disable MD013 -->
+
+| Installation | Suggested action |
+| --- | --- |
+| Homebrew | `brew upgrade owa-bridge` |
+| WinGet | `winget upgrade --id nkiyohara.OWABridge --exact` |
+| Scoop | `scoop update owa-bridge` |
+| deb, RPM, APK | Download and verify the new native package, then install it with the matching package manager |
+| Direct archive | Download the verified archive from the linked release |
+
+<!-- markdownlint-enable MD013 -->
+
+The checker never replaces a binary. Continue to verify checksums and the
+Sigstore bundle before installing a direct archive or native package.
+
 ## Package catalogs
 
 GitHub releases remain canonical. Every release renders and verifies a

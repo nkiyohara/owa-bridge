@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/nkiyohara/owa-bridge/internal/application"
 	"github.com/nkiyohara/owa-bridge/internal/browser"
+	"github.com/nkiyohara/owa-bridge/internal/config"
+	"github.com/nkiyohara/owa-bridge/internal/updatecheck"
 )
 
 type doctorCommand struct {
@@ -35,7 +38,7 @@ func (command *doctorCommand) Run(app *runtime) error {
 		Healthy: true,
 		Online:  command.Online,
 		Version: app.info.Version,
-		Checks:  make([]doctorCheck, 0, 10),
+		Checks:  make([]doctorCheck, 0, 11),
 	}
 
 	configuration, configPath, err := app.loadConfig()
@@ -52,6 +55,7 @@ func (command *doctorCommand) Run(app *runtime) error {
 	}
 	report.Account = string(accountID)
 	report.add("account", "pass", "configured account alias and HTTPS origin are valid")
+	command.addUpdateStatus(app, configuration, &report)
 
 	executable, err := browser.ResolveExecutable(configuration.Browser.Executable)
 	if err != nil {
@@ -150,6 +154,30 @@ func (command *doctorCommand) Run(app *runtime) error {
 		report.add("daemon_close", "fail", doctorError(err))
 	}
 	return command.finish(app, report)
+}
+
+func (command *doctorCommand) addUpdateStatus(app *runtime, configuration config.Config, report *doctorReport) {
+	if !app.automaticUpdateChecksEnabled(&configuration) {
+		report.add("update", "skip", "automatic stable-release checks are disabled")
+		return
+	}
+	ctx, cancel := context.WithTimeout(app.context, 750*time.Millisecond)
+	defer cancel()
+	update, err := app.updateReport(ctx)
+	if err != nil {
+		report.add("update", "skip", "stable-release status is temporarily unavailable")
+		return
+	}
+	switch update.Status {
+	case updatecheck.StatusAvailable:
+		report.add("update", "pass", fmt.Sprintf("%s is available; %s", update.LatestVersion, update.Upgrade))
+	case updatecheck.StatusCurrent:
+		report.add("update", "pass", update.LatestVersion+" is the latest stable release")
+	case updatecheck.StatusDevelopment:
+		report.add("update", "skip", "development build; stable-release comparison skipped")
+	case updatecheck.StatusUnavailable:
+		report.add("update", "skip", "stable-release status is temporarily unavailable")
+	}
 }
 
 func (report *doctorReport) add(name, status, detail string) {

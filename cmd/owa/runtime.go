@@ -20,6 +20,7 @@ import (
 	"github.com/nkiyohara/owa-bridge/internal/localipc"
 	"github.com/nkiyohara/owa-bridge/internal/paths"
 	"github.com/nkiyohara/owa-bridge/internal/session"
+	"github.com/nkiyohara/owa-bridge/internal/updatecheck"
 )
 
 type browserHandle interface {
@@ -40,16 +41,20 @@ type browserLauncher func(context.Context, browser.Options) (browserHandle, erro
 type commandRunner func(context.Context, io.Writer, io.Writer, string, ...string) error
 
 type runtime struct {
-	context    context.Context
-	configPath string
-	info       buildinfo.Info
-	stdin      io.Reader
-	stdout     io.Writer
-	stderr     io.Writer
-	launch     browserLauncher
-	endpoint   func(string) (localipc.Endpoint, error)
-	runCommand commandRunner
-	processID  int
+	context           context.Context
+	configPath        string
+	info              buildinfo.Info
+	stdin             io.Reader
+	stdout            io.Writer
+	stderr            io.Writer
+	launch            browserLauncher
+	endpoint          func(string) (localipc.Endpoint, error)
+	runCommand        commandRunner
+	processID         int
+	checkUpdate       func(context.Context) (updatecheck.Result, error)
+	installMethod     func() updatecheck.InstallMethod
+	interactiveOutput func() bool
+	lookupEnv         func(string) (string, bool)
 }
 
 func newRuntime(
@@ -58,7 +63,7 @@ func newRuntime(
 	stdout, stderr io.Writer,
 	info buildinfo.Info,
 ) *runtime {
-	return &runtime{
+	app := &runtime{
 		context:    ctx,
 		configPath: configPath,
 		info:       info,
@@ -76,7 +81,28 @@ func newRuntime(
 			return command.Run()
 		},
 		processID: os.Getpid(),
+		lookupEnv: os.LookupEnv,
 	}
+	app.checkUpdate = func(ctx context.Context) (updatecheck.Result, error) {
+		cachePath, err := paths.UpdateCachePath()
+		if err != nil {
+			return updatecheck.Result{}, err
+		}
+		return (updatecheck.Checker{
+			CurrentVersion: app.info.Version,
+			CachePath:      cachePath,
+			Client:         &http.Client{Timeout: 5 * time.Second},
+		}).Check(ctx)
+	}
+	app.installMethod = func() updatecheck.InstallMethod {
+		executable, err := os.Executable()
+		if err != nil {
+			return updatecheck.InstallDirect
+		}
+		return updatecheck.DetectInstallation(executable)
+	}
+	app.interactiveOutput = func() bool { return outputIsTerminal(app.stderr) }
+	return app
 }
 
 // openDaemon connects to the config-scoped session owner, starting it when

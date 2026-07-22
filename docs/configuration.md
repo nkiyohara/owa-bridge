@@ -33,6 +33,9 @@ max_attendees = 50
 
 [browser]
 login_timeout = "5m0s"
+
+[updates]
+disable_automatic_checks = false
 ```
 
 Unknown fields, non-HTTPS origins, URL credentials, unsupported policy modes,
@@ -49,6 +52,12 @@ must use the actual OWA service origin observed by an authorized user.
 The configuration schema cannot represent a password, OAuth token, cookie,
 canary, or refresh token. Browser session material belongs to the dedicated
 browser profile and the in-memory session owner, never this file.
+
+`disable_automatic_checks = true` disables opportunistic stable-release checks
+without disabling the explicit `owa update check` command. Set
+`OWA_NO_UPDATE_CHECK=1` for a process-level override. Checks read only the
+public latest-release metadata, are cached for 24 hours, and never run through
+MCP, completion, or JSON notification output.
 
 An optional account `mailbox` must be one bare SMTP address. It enables
 explicit shared/delegated mailbox routing with OWA's anchor and explicit-logon

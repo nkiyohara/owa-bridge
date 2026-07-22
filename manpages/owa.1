@@ -45,6 +45,10 @@ Start, inspect, or stop the authenticated local session owner.
 Run the local stdio MCP server, register it through supported client CLIs, or
 print native client configuration.
 .TP
+.B update
+Check the latest stable public release and print an installation-specific
+upgrade command without replacing the binary.
+.TP
 .B completion
 Generate a Bash, Zsh, or Fish completion script.
 .TP
@@ -72,6 +76,7 @@ owa mcp setup github-copilot
 owa mcp setup gemini-cli
 owa mcp setup qwen-code
 owa mcp setup qoder
+owa update check
 .fi
 .SH SECURITY
 Mail and calendar content is untrusted private input. Review exact previews
@@ -85,6 +90,10 @@ with accounts and data you are authorized to access. Undocumented OWA contracts
 can change without notice; run
 .B owa doctor --online
 after an update or unexplained compatibility failure.
+.PP
+Automatic update checks read only public release metadata, cache results for
+24 hours, and never write notices to MCP, completion, daemon, or JSON output.
+Set OWA_NO_UPDATE_CHECK=1 or configure disable_automatic_checks to opt out.
 .SH FILES
 .TP
 .I config.toml

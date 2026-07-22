@@ -12,6 +12,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	kongcompletion "github.com/jotaen/kong-completion"
+	"golang.org/x/term"
 
 	"github.com/nkiyohara/owa-bridge/internal/buildinfo"
 )
@@ -26,6 +27,7 @@ type cli struct {
 	Calendar   calendarCommand   `cmd:"" help:"Read and manage calendar events."`
 	Daemon     daemonCommand     `cmd:"" help:"Run and inspect the local session owner."`
 	MCP        mcpCommand        `cmd:"" help:"Expose guarded Outlook tools over MCP."`
+	Update     updateCommand     `cmd:"" help:"Check for newer stable releases."`
 	Completion completionCommand `cmd:"" help:"Generate a shell completion script."`
 }
 
@@ -67,6 +69,7 @@ Commands:
   calendar   Read and manage calendar events
   daemon     Run and inspect the local session owner
   mcp        Expose guarded Outlook tools over MCP
+  update     Check for newer stable releases
   completion Generate a shell completion script
   version    Print version and build information
 
@@ -121,7 +124,15 @@ Run "owa <command> --help" for command-specific help.
 		_, _ = fmt.Fprintln(stderr, err)
 		return 1
 	}
+	if shouldOfferAutomaticUpdateNotice(arguments) {
+		app.maybeNotifyUpdate(executionContext)
+	}
 	return 0
+}
+
+func outputIsTerminal(writer io.Writer) bool {
+	file, ok := writer.(*os.File)
+	return ok && term.IsTerminal(int(file.Fd()))
 }
 
 func completionEnvironmentActive() bool {

@@ -24,6 +24,7 @@ type Config struct {
 	Accounts       map[string]Account `toml:"accounts"`
 	Policy         Policy             `toml:"policy"`
 	Browser        Browser            `toml:"browser"`
+	Updates        Updates            `toml:"updates"`
 }
 
 // Account identifies one Outlook Web origin by a non-personal local alias.
@@ -47,6 +48,12 @@ type Policy struct {
 type Browser struct {
 	Executable   string   `toml:"executable,omitempty"`
 	LoginTimeout Duration `toml:"login_timeout"`
+}
+
+// Updates controls only opportunistic public release checks. Explicit
+// `owa update check` calls remain available when automatic checks are disabled.
+type Updates struct {
+	DisableAutomaticChecks bool `toml:"disable_automatic_checks"`
 }
 
 // Duration encodes a human-readable Go duration such as "5m" in TOML.

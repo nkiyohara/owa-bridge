@@ -38,6 +38,11 @@ Linux packages are covered in the [install guide](docs/install.md). Sign-in,
 MFA, and Conditional Access stay inside a dedicated browser profile; the CLI
 never asks for a password.
 
+Released binaries quietly cache a public stable-release check for 24 hours and
+show an update hint only on an interactive terminal. Run `owa update check` at
+any time for explicit status; MCP, completion, and JSON output never receive an
+automatic notice.
+
 ## Connect an AI agent
 
 Choose the client you use and run one command:

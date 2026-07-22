@@ -21,6 +21,7 @@ gate does not authorize bypassing an operating-system or organization control.
 | --- | --- | --- |
 | Release download and checksum | Yes | No |
 | Native launch, config, local IPC | Yes | No |
+| Stable-release update check | Yes | No |
 | Interactive browser login and online doctor | Yes | Mailbox read access |
 | CLI folder, mail, and calendar reads | Recommended | Mailbox read access |
 | Codex and Claude Code MCP reads | Per installed client | Mailbox read access |
@@ -58,7 +59,7 @@ OS and version:
 Architecture:
 Browser and version:
 Deployment class: Microsoft 365 work/school | Outlook.com | other
-Install surface: archive | deb | RPM | APK
+Install surface: Homebrew | WinGet | Scoop | archive | deb | RPM | APK
 Codex version or SKIP:
 Claude Code version or SKIP:
 ```
@@ -223,7 +224,8 @@ architecture suffix, not the release number, for arm64.
 
 ## 6. Initialize without Outlook access
 
-These commands must not open a browser or contact Outlook:
+These commands must not open a browser or contact Outlook. The offline doctor
+may read bounded public release metadata unless update checks are disabled:
 
 ```console
 owa config init
@@ -248,6 +250,22 @@ generated `https://outlook.cloud.microsoft` origin, edit only
 `accounts.<alias>.origin` to that final HTTPS origin with no path. Do not add an
 identity-provider origin or a redirecting vanity host. Validate again and stop
 the daemon after every config edit.
+
+### 6.1 Verify update-check isolation
+
+```console
+owa update check
+owa update check --json
+```
+
+The first command should report the current stable release or an
+installation-specific upgrade action. The second output must be one valid JSON
+object with no human `Update available:` line before or after it. Repeat it and
+confirm `cached` is `true`; do not expect a second network request within 24
+hours. Temporarily set `updates.disable_automatic_checks = true`, validate the
+config, and confirm the offline doctor's `update` row is `skip`. Restore the
+setting afterward. MCP and completion byte streams are covered by deterministic
+tests and must never be modified for a manual notice.
 
 ## 7. Run the bounded read-only compatibility check
 
@@ -521,9 +539,10 @@ Complete this table locally:
 
 | Gate                                      | Result | Content-free note |
 | ----------------------------------------- | ------ | ----------------- |
-| Checksum 36/36                            |        |                   |
+| Checksum 39/39                            |        |                   |
 | Native archive launch                     |        |                   |
 | Native package, if applicable             |        |                   |
+| Stable-release update check               |        |                   |
 | Config and offline doctor                 |        |                   |
 | Local IPC start/status/stop               |        |                   |
 | Visible login                             |        |                   |

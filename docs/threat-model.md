@@ -72,6 +72,9 @@ automation framework.
 - Produce checksums and SBOMs for every release artifact.
 - Attach workload-identity signatures only when their public transparency
   metadata is compatible with the repository's privacy requirement.
+- Limit update discovery to an unauthenticated, bounded read of the public
+  stable-release endpoint. Send no Outlook or machine identifiers, cache both
+  success and failure for 24 hours, and never replace a binary automatically.
 
 ## Explicitly unsupported
 

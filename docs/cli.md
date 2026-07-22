@@ -55,6 +55,24 @@ stage that failed.
 See [compatibility evidence](compatibility.md) for the live-test checklist and
 the data that is safe to include in a report.
 
+The offline and online reports include a non-failing `update` row. It reports a
+cached stable-release comparison, skips development builds and opt-outs, and
+never makes release-endpoint failure a doctor failure.
+
+## Check for updates
+
+```console
+owa update check
+owa update check --json
+```
+
+The command compares the running semantic version with the latest public,
+stable GitHub release and prints the installation-appropriate upgrade command.
+It never suggests a prerelease, downgrade, or unattended binary replacement.
+Results—including temporary network failure—are cached for 24 hours. See the
+[install guide](install.md#stay-current) for privacy, opt-out, and package
+manager details.
+
 ## Authenticate
 
 ```console

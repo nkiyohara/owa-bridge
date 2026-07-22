@@ -49,7 +49,7 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if got.Version != want.Version || got.Policy != want.Policy || len(got.Accounts) != len(want.Accounts) ||
+	if got.Version != want.Version || got.Policy != want.Policy || got.Updates != want.Updates || len(got.Accounts) != len(want.Accounts) ||
 		got.Accounts["personal"] != want.Accounts["personal"] {
 		t.Fatalf("Load() = %+v, want %+v", got, want)
 	}

@@ -37,6 +37,16 @@ All notable user-facing changes are recorded here. The project follows
 - Include the agent plugin and both marketplace manifests in verified release
   archives and native Linux packages.
 
+### Updates
+
+- Add `owa update check` plus quiet, 24-hour-cached stable-release notices for
+  human-facing interactive commands.
+- Detect Homebrew, WinGet, Scoop, deb, RPM, APK, and direct installs and print
+  the matching upgrade guidance without replacing a binary.
+- Keep update notices out of MCP, completion, daemon, and JSON output; cache
+  endpoint failure, support config and environment opt-out, and expose a
+  non-failing update row in `owa doctor`.
+
 ## 0.3.2 - 2026-07-20
 
 ### Homebrew
