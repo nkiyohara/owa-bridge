@@ -102,9 +102,11 @@ Configure these repository secrets before publishing a stable tag:
 
 The owned catalogs update idempotently and run their own installation tests on
 push. WinGet remains available only after Microsoft's validation and review of
-the submitted pull request. A catalog-publication failure does not mutate or
-replace the already verified GitHub release; fix the credential or upstream
-condition and rerun the failed job.
+the submitted pull request. A rerun skips submission when the same version's
+pull request is already open. A later release stops instead of opening a second
+pull request until the prior one is merged or closed. A catalog-publication
+failure does not mutate or replace the already verified GitHub release; fix the
+credential or upstream condition and rerun the failed job.
 
 Homebrew intentionally builds the tagged source archive. Until macOS binaries
 are signed and notarized, the project does not publish a binary Cask that would
