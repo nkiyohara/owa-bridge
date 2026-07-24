@@ -72,6 +72,36 @@ func TestCheckerAcceptsLargeGitHubReleaseMetadata(t *testing.T) {
 	}
 }
 
+func TestForcedCheckerRefreshesFreshCache(t *testing.T) {
+	now := time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		requests++
+		_, _ = writer.Write([]byte(`{"tag_name":"v1.1.0","draft":false,"prerelease":false}`))
+	}))
+	defer server.Close()
+	cachePath := filepath.Join(t.TempDir(), "latest.json")
+	if err := writeCache(cachePath, cacheRecord{
+		Format:        cacheFormat,
+		CheckedAt:     now,
+		LatestVersion: "v1.0.0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (Checker{
+		CurrentVersion: "1.0.0",
+		CachePath:      cachePath,
+		Endpoint:       server.URL,
+		Client:         server.Client(),
+		Now:            func() time.Time { return now.Add(time.Hour) },
+		Force:          true,
+	}).Check(t.Context())
+	if err != nil || result.Status != StatusAvailable || result.LatestVersion != "v1.1.0" ||
+		result.Cached || requests != 1 {
+		t.Fatalf("forced Check() = %+v, %v; requests=%d", result, err, requests)
+	}
+}
+
 func TestCheckerInvalidatesLegacyFailureCache(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {

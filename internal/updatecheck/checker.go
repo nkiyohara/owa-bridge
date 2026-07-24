@@ -62,6 +62,7 @@ type Checker struct {
 	Endpoint       string
 	Client         *http.Client
 	Now            func() time.Time
+	Force          bool
 }
 
 type releaseResponse struct {
@@ -95,9 +96,11 @@ func (checker Checker) Check(ctx context.Context) (Result, error) {
 	if checker.Now != nil {
 		now = checker.Now().UTC()
 	}
-	if cached, ok := loadFreshCache(checker.CachePath, now); ok {
-		result, err := resultFromRecord(checker.CurrentVersion, current, cached, true)
-		return result, err
+	if !checker.Force {
+		if cached, ok := loadFreshCache(checker.CachePath, now); ok {
+			result, err := resultFromRecord(checker.CurrentVersion, current, cached, true)
+			return result, err
+		}
 	}
 	releaseLock, acquired := acquireCheckLock(checker.CachePath, now)
 	if !acquired {
@@ -108,10 +111,13 @@ func (checker Checker) Check(ctx context.Context) (Result, error) {
 	}
 	defer releaseLock()
 	// A separate process may have populated the cache immediately before this
-	// process acquired the lock.
-	if cached, ok := loadFreshCache(checker.CachePath, now); ok {
-		result, err := resultFromRecord(checker.CurrentVersion, current, cached, true)
-		return result, err
+	// process acquired the lock. An explicit forced check intentionally skips
+	// it and refreshes public metadata.
+	if !checker.Force {
+		if cached, ok := loadFreshCache(checker.CachePath, now); ok {
+			result, err := resultFromRecord(checker.CurrentVersion, current, cached, true)
+			return result, err
+		}
 	}
 
 	record := cacheRecord{Format: cacheFormat, CheckedAt: now, Unavailable: true}

@@ -51,7 +51,8 @@ type Browser struct {
 }
 
 // Updates controls only opportunistic public release checks. Explicit
-// `owa update check` calls remain available when automatic checks are disabled.
+// `owa update` and `owa update check` calls remain available when automatic
+// checks are disabled.
 type Updates struct {
 	DisableAutomaticChecks bool `toml:"disable_automatic_checks"`
 }

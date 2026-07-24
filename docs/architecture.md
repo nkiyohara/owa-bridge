@@ -79,6 +79,17 @@ The default MCP transport is stdio. Optional Streamable HTTP support may be
 added for advanced local deployments, but must bind to loopback, validate the
 `Origin` header, and require authentication.
 
+## Release update boundary
+
+Interactive CLI startup may read cached public stable-release metadata and
+display a TTY-only notice. It never updates in the background. The explicit
+`owa update` command follows the detected installation owner: package-managed
+installs receive their exact external upgrade command, while a direct install
+uses the signed, rollback-capable flow in [ADR
+0007](adr/0007-explicit-verified-self-update.md). MCP, daemon, completion,
+machine-readable output, and Outlook application use cases do not enter this
+local release-management path.
+
 ## Session lifecycle
 
 1. `owa login` launches a dedicated browser profile visibly by default;

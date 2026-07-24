@@ -1,6 +1,6 @@
 # Install and verify
 
-`owa-bridge` 0.4 is an early release over undocumented Outlook Web contracts.
+`owa-bridge` 0.5 is an early release over undocumented Outlook Web contracts.
 Use only an authorized account and review the
 [compatibility evidence](compatibility.md) before enabling writes.
 
@@ -45,7 +45,7 @@ a catalog yet, use the signed GitHub release directly.
 Use the release page in a browser or GitHub CLI. For example:
 
 ```console
-VERSION=v0.4.2
+VERSION=v0.5.0
 mkdir owa-release
 gh release download "$VERSION" \
   --repo nkiyohara/owa-bridge \
@@ -182,18 +182,25 @@ the first login.
 
 ## Stay current
 
-Check the latest stable public release explicitly:
+Released binaries check the latest stable public release at interactive CLI
+startup and display a quiet notice when an update is available. Apply the
+appropriate update path with one command:
+
+```console
+owa update
+```
+
+For check-only automation or diagnostics:
 
 ```console
 owa update check
 owa update check --json
 ```
 
-Released binaries also perform a quiet check after successful, human-facing
-interactive commands. A success or failure is cached in the private state
-directory for 24 hours. Network failure never fails an Outlook operation, and
-automatic notices never enter MCP stdio, generated completions, daemon output,
-or any command using `--json`.
+The startup check is read-only. A success or failure is cached in the private
+state directory for 24 hours. Network failure never fails an Outlook
+operation, and automatic notices never enter MCP stdio, generated completions,
+daemon output, pipes, or any command using `--json`.
 
 The request is an unauthenticated `GET` for the repository's public latest
 release metadata. It sends the owa-bridge version as its user agent and sends
@@ -220,12 +227,19 @@ surface:
 | WinGet | `winget upgrade --id nkiyohara.OWABridge --exact` |
 | Scoop | `scoop update owa-bridge` |
 | deb, RPM, APK | Download and verify the new native package, then install it with the matching package manager |
-| Direct archive | Download the verified archive from the linked release |
+| Direct archive | `owa update` |
 
 <!-- markdownlint-enable MD013 -->
 
-The checker never replaces a binary. Continue to verify checksums and the
-Sigstore bundle before installing a direct archive or native package.
+`owa update` never modifies files owned by a package manager; it prints the
+command above instead. For a direct archive it refreshes stable metadata,
+verifies the exact release workflow's Sigstore identity, signed checksum,
+candidate version, OS, and architecture, then performs a rollback-capable
+replacement. The previous executable is retained beside the installation as
+`owa.backup-VERSION` or `owa.exe.backup-VERSION`. Background checks never
+replace a binary. The explicit direct path contacts the GitHub release
+endpoints and Sigstore's public TUF service, sending only component user-agent
+strings—never Outlook, account, tenant, configuration, or machine identity.
 
 ## Package catalogs
 

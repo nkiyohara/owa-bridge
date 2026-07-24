@@ -128,6 +128,15 @@ automatically retried.
 `latestVersion`, `releaseUrl`, `checkedAt`, `installMethod`, and `upgrade`.
 `status` is `current`, `available`, `development`, or `unavailable`. This
 content-free result is separate from the Outlook application result types.
+`installMethod` and `upgrade` appear only when `status` is `available`.
+
+`owa update --json` returns the explicit action result. It always includes
+`status`, `currentVersion`, `updated`, and `installMethod`. A direct successful
+replacement uses `status: "updated"` and also returns `previousVersion`,
+`latestVersion`, `releaseUrl`, `archive`, `backupPath`, and the completed
+`verification` checks. A managed installation uses
+`status: "action_required"` with the exact external `command`; `updated`
+remains false.
 Automatic human notices are never appended to JSON output.
 
 ## Compatibility policy

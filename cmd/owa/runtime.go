@@ -53,8 +53,11 @@ type runtime struct {
 	runCommand        commandRunner
 	processID         int
 	checkUpdate       func(context.Context) (updatecheck.Result, error)
+	checkUpdateFresh  func(context.Context) (updatecheck.Result, error)
+	installUpdate     func(context.Context, func(updatecheck.InstallProgress)) (updatecheck.InstallResult, error)
 	installMethod     func() updatecheck.InstallMethod
 	interactiveOutput func() bool
+	interactiveStdout func() bool
 	lookupEnv         func(string) (string, bool)
 }
 
@@ -96,6 +99,40 @@ func newRuntime(
 			Client:         &http.Client{Timeout: 5 * time.Second},
 		}).Check(ctx)
 	}
+	app.checkUpdateFresh = func(ctx context.Context) (updatecheck.Result, error) {
+		cachePath, err := paths.UpdateCachePath()
+		if err != nil {
+			return updatecheck.Result{}, err
+		}
+		return (updatecheck.Checker{
+			CurrentVersion: app.info.Version,
+			CachePath:      cachePath,
+			Client:         &http.Client{Timeout: 15 * time.Second},
+			Force:          true,
+		}).Check(ctx)
+	}
+	app.installUpdate = func(
+		ctx context.Context,
+		progress func(updatecheck.InstallProgress),
+	) (updatecheck.InstallResult, error) {
+		executable, err := os.Executable()
+		if err != nil {
+			return updatecheck.InstallResult{}, fmt.Errorf("resolve running executable: %w", err)
+		}
+		trustCachePath, err := paths.UpdateTrustCachePath()
+		if err != nil {
+			return updatecheck.InstallResult{}, err
+		}
+		return (updatecheck.Installer{
+			CurrentVersion: app.info.Version,
+			Executable:     executable,
+			TrustCachePath: trustCachePath,
+			Client:         &http.Client{Timeout: 2 * time.Minute},
+			GOOS:           app.info.OS,
+			GOARCH:         app.info.Arch,
+			Progress:       progress,
+		}).Install(ctx)
+	}
 	app.installMethod = func() updatecheck.InstallMethod {
 		executable, err := os.Executable()
 		if err != nil {
@@ -104,6 +141,7 @@ func newRuntime(
 		return updatecheck.DetectInstallation(executable)
 	}
 	app.interactiveOutput = func() bool { return outputIsTerminal(app.stderr) }
+	app.interactiveStdout = func() bool { return outputIsTerminal(app.stdout) }
 	return app
 }
 

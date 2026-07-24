@@ -62,16 +62,24 @@ never makes release-endpoint failure a doctor failure.
 ## Check for updates
 
 ```console
+owa update
 owa update check
 owa update check --json
 ```
 
-The command compares the running semantic version with the latest public,
-stable GitHub release and prints the installation-appropriate upgrade command.
-It never suggests a prerelease, downgrade, or unattended binary replacement.
-Results—including temporary network failure—are cached for 24 hours. See the
-[install guide](install.md#stay-current) for privacy, opt-out, and package
-manager details.
+`owa update` performs a fresh comparison with the latest public stable GitHub
+release. A direct installation downloads the matching archive, validates its
+signed Sigstore provenance, SHA-256 checksum, version, OS, and architecture,
+and replaces the executable with a rollback copy. A package-managed
+installation is not modified; the command prints the exact Homebrew, WinGet,
+Scoop, or native-package action.
+
+`owa update check` is read-only and cache-aware. It never suggests a
+prerelease, downgrade, or unattended replacement. Results—including temporary
+network failure—are cached for 24 hours. Human TTY output uses concise status
+and progress styling; `--json`, pipes, MCP, daemon, and completion output are
+unstyled. See the [install guide](install.md#stay-current) for privacy,
+rollback, opt-out, and package-manager details.
 
 ## Authenticate
 

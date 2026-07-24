@@ -13,17 +13,48 @@ import (
 )
 
 type updateCommand struct {
-	Check updateCheckCommand `cmd:"" help:"Check the latest stable public release."`
+	Action *string `arg:"" optional:"" name:"action" enum:"check" help:"Use check to report the latest stable release without installing."`
+	JSON   bool    `help:"Write machine-readable JSON without terminal styling."`
 }
 
 type updateCheckCommand struct {
 	JSON bool `help:"Write machine-readable JSON."`
 }
 
+type updateApplyCommand struct {
+	JSON bool `help:"Write machine-readable JSON without progress output."`
+}
+
 type updateReport struct {
 	updatecheck.Result
 	InstallMethod updatecheck.InstallMethod `json:"installMethod,omitempty"`
 	Upgrade       string                    `json:"upgrade,omitempty"`
+}
+
+type updateActionReport struct {
+	Status          string                    `json:"status"`
+	PreviousVersion string                    `json:"previousVersion,omitempty"`
+	CurrentVersion  string                    `json:"currentVersion"`
+	LatestVersion   string                    `json:"latestVersion,omitempty"`
+	Updated         bool                      `json:"updated"`
+	InstallMethod   updatecheck.InstallMethod `json:"installMethod"`
+	Command         string                    `json:"command,omitempty"`
+	ReleaseURL      string                    `json:"releaseUrl,omitempty"`
+	Archive         string                    `json:"archive,omitempty"`
+	BackupPath      string                    `json:"backupPath,omitempty"`
+	Verification    []string                  `json:"verification,omitempty"`
+}
+
+func (command *updateCommand) Run(app *runtime) error {
+	if command.Action == nil {
+		return (&updateApplyCommand{JSON: command.JSON}).Run(app)
+	}
+	switch *command.Action {
+	case "check":
+		return (&updateCheckCommand{JSON: command.JSON}).Run(app)
+	default:
+		return fmt.Errorf("unknown update action %q; use \"owa update\" or \"owa update check\"", *command.Action)
+	}
 }
 
 func (command *updateCheckCommand) Run(app *runtime) error {
@@ -33,41 +64,81 @@ func (command *updateCheckCommand) Run(app *runtime) error {
 	if command.JSON {
 		return writeJSON(app.stdout, report)
 	}
-	switch report.Status {
-	case updatecheck.StatusAvailable:
-		_, err := fmt.Fprintf(
-			app.stdout,
-			"Update available: owa %s -> %s\nInstall method: %s\nUpgrade: %s\nRelease: %s\n",
-			report.CurrentVersion,
-			report.LatestVersion,
-			report.InstallMethod,
-			report.Upgrade,
-			report.ReleaseURL,
-		)
-		return err
-	case updatecheck.StatusCurrent:
-		_, err := fmt.Fprintf(
-			app.stdout,
-			"owa %s is current; latest stable is %s (checked %s).\n",
-			report.CurrentVersion,
-			report.LatestVersion,
-			report.CheckedAt,
-		)
-		return err
-	case updatecheck.StatusDevelopment:
-		_, err := fmt.Fprintf(app.stdout, "owa %s is a development build; automatic version comparison is skipped.\n", report.CurrentVersion)
-		return err
-	case updatecheck.StatusUnavailable:
-		_, err := fmt.Fprintln(app.stdout, "Update status is temporarily unavailable; normal owa operations are unaffected.")
-		return err
+	view := newUpdateView(app, app.stdout, app.interactiveStdout())
+	return view.writeCheck(report)
+}
+
+func (command *updateApplyCommand) Run(app *runtime) error {
+	ctx, cancel := context.WithTimeout(app.context, 2*time.Minute)
+	defer cancel()
+	method := app.installMethod()
+	view := newUpdateView(app, app.stdout, !command.JSON && app.interactiveStdout())
+	if method == updatecheck.InstallDirect {
+		var progress func(updatecheck.InstallProgress)
+		if !command.JSON {
+			progress = view.writeProgress
+		}
+		result, err := app.installUpdate(ctx, progress)
+		if err != nil {
+			return err
+		}
+		report := updateActionReport{
+			Status:         string(result.Status),
+			CurrentVersion: result.CurrentVersion,
+			LatestVersion:  result.LatestVersion,
+			Updated:        result.Status == updatecheck.InstallStatusUpdated,
+			InstallMethod:  method,
+			ReleaseURL:     result.ReleaseURL,
+			Archive:        result.Archive,
+			BackupPath:     result.BackupPath,
+		}
+		if report.Updated {
+			report.PreviousVersion = result.PreviousVersion
+			report.Verification = []string{"sigstore", "sha256", "version", "platform"}
+		}
+		if command.JSON {
+			return writeJSON(app.stdout, report)
+		}
+		return view.writeAction(report)
 	}
-	return errors.New("unknown update status")
+
+	report, err := app.updateReportFresh(ctx)
+	if err != nil {
+		return fmt.Errorf("check latest stable release: %w", err)
+	}
+	action := updateActionReport{
+		Status:         string(report.Status),
+		CurrentVersion: report.CurrentVersion,
+		LatestVersion:  report.LatestVersion,
+		Updated:        false,
+		InstallMethod:  method,
+		ReleaseURL:     report.ReleaseURL,
+	}
+	if report.Status == updatecheck.StatusAvailable {
+		action.Status = "action_required"
+		action.Command = report.Upgrade
+	}
+	if command.JSON {
+		return writeJSON(app.stdout, action)
+	}
+	return view.writeAction(action)
 }
 
 func (app *runtime) updateReport(ctx context.Context) (updateReport, error) {
-	result, err := app.checkUpdate(ctx)
+	return app.updateReportWith(ctx, app.checkUpdate)
+}
+
+func (app *runtime) updateReportFresh(ctx context.Context) (updateReport, error) {
+	return app.updateReportWith(ctx, app.checkUpdateFresh)
+}
+
+func (app *runtime) updateReportWith(
+	ctx context.Context,
+	check func(context.Context) (updatecheck.Result, error),
+) (updateReport, error) {
+	result, err := check(ctx)
 	report := updateReport{Result: result}
-	if result.LatestVersion != "" {
+	if result.Status == updatecheck.StatusAvailable {
 		report.InstallMethod = app.installMethod()
 		report.Upgrade = updatecheck.UpgradeAdvice(report.InstallMethod, result.LatestVersion)
 	}
@@ -84,13 +155,8 @@ func (app *runtime) maybeNotifyUpdate(parent context.Context) {
 	if err != nil || report.Status != updatecheck.StatusAvailable {
 		return
 	}
-	_, _ = fmt.Fprintf(
-		app.stderr,
-		"\nUpdate available: owa %s -> %s. %s\n",
-		report.CurrentVersion,
-		report.LatestVersion,
-		report.Upgrade,
-	)
+	view := newUpdateView(app, app.stderr, true)
+	_ = view.writeNotice(report.CurrentVersion, report.LatestVersion)
 }
 
 func (app *runtime) automaticUpdateChecksEnabled(configuration *config.Config) bool {

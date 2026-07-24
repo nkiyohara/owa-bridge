@@ -3,6 +3,23 @@
 All notable user-facing changes are recorded here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.0 - 2026-07-24
+
+### Verified self-update
+
+- Make `owa update` the default update action: direct installations verify the
+  exact tagged GitHub Actions Sigstore identity, signed checksum manifest,
+  archive, version, OS, and architecture before rollback-capable replacement.
+- Keep package-manager ownership intact and display the exact Homebrew, WinGet,
+  Scoop, deb, RPM, or APK upgrade path instead of modifying managed files.
+- Present compact styled status and progress on interactive terminals while
+  preserving stable, unstyled JSON, MCP, daemon, completion, and piped output.
+- Move the quiet cached update notice to CLI startup and consistently direct
+  users to `owa update`.
+- Remove misleading `upgrade` and `installMethod` fields from current
+  `owa update check --json` results and test root-help descriptions against the
+  executable command model.
+
 ## 0.4.2 - 2026-07-24
 
 ### Session owner upgrades

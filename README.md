@@ -13,7 +13,7 @@ where Graph application access is unavailable.
 [Feature matrix](docs/features.md) · [JSON contract](docs/json.md)
 
 > [!WARNING]
-> `owa-bridge` 0.4 is an early release over undocumented Outlook Web contracts.
+> `owa-bridge` 0.5 is an early release over undocumented Outlook Web contracts.
 > Use only an account you are authorized to access, review every write, and
 > keep Outlook available for reconciliation after an unknown outcome.
 
@@ -39,9 +39,11 @@ MFA, and Conditional Access stay inside a dedicated browser profile; the CLI
 never asks for a password.
 
 Released binaries quietly cache a public stable-release check for 24 hours and
-show an update hint only on an interactive terminal. Run `owa update check` at
-any time for explicit status; MCP, completion, and JSON output never receive an
-automatic notice.
+show an update hint only on an interactive terminal. Run `owa update`: direct
+installs verify signed provenance and update with a rollback copy, while
+package-managed installs print their exact owner-specific command. Use
+`owa update check` for read-only status; MCP, completion, pipes, and JSON output
+never receive an automatic notice or terminal styling.
 
 ## Connect an AI agent
 

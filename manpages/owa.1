@@ -46,8 +46,9 @@ Run the local stdio MCP server, register it through supported client CLIs, or
 print native client configuration.
 .TP
 .B update
-Check the latest stable public release and print an installation-specific
-upgrade command without replacing the binary.
+Check the latest stable public release. Explicitly self-update a direct
+installation after signed provenance and platform verification, or print the
+owner-specific command for a package-managed installation.
 .TP
 .B completion
 Generate a Bash, Zsh, or Fish completion script.
@@ -76,6 +77,7 @@ owa mcp setup github-copilot
 owa mcp setup gemini-cli
 owa mcp setup qwen-code
 owa mcp setup qoder
+owa update
 owa update check
 .fi
 .SH SECURITY
@@ -92,8 +94,12 @@ can change without notice; run
 after an update or unexplained compatibility failure.
 .PP
 Automatic update checks read only public release metadata, cache results for
-24 hours, and never write notices to MCP, completion, daemon, or JSON output.
-Set OWA_NO_UPDATE_CHECK=1 or configure disable_automatic_checks to opt out.
+24 hours, and never write notices to MCP, completion, daemon, piped, or JSON
+output. Only an explicit
+.B owa update
+may replace a verified direct installation; package-manager files are never
+modified. Set OWA_NO_UPDATE_CHECK=1 or configure disable_automatic_checks to
+opt out of startup checks.
 .SH FILES
 .TP
 .I config.toml

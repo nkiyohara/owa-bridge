@@ -69,7 +69,7 @@ request ID, subject, recipient, body, token, or screenshot.
 
 ## 2. Download the release
 
-The current supported release is `v0.4.2`. Change both variables together when
+The current supported release is `v0.5.0`. Change both variables together when
 testing another version.
 
 ### macOS or Linux download
@@ -77,8 +77,8 @@ testing another version.
 Run from a new empty directory:
 
 ```console
-VERSION=v0.4.2
-RELEASE=0.4.2
+VERSION=v0.5.0
+RELEASE=0.5.0
 mkdir owa-test-assets
 gh release download "$VERSION" \
   --repo nkiyohara/owa-bridge \
@@ -91,8 +91,8 @@ cd owa-test-assets
 Run from a new empty directory:
 
 ```powershell
-$Version = "v0.4.2"
-$Release = "0.4.2"
+$Version = "v0.5.0"
+$Release = "0.5.0"
 New-Item -ItemType Directory -Path owa-test-assets | Out-Null
 gh release download $Version `
   --repo nkiyohara/owa-bridge `
@@ -205,15 +205,15 @@ compatible disposable host:
 
 ```console
 # Debian or Ubuntu
-sudo apt install ./owa-bridge_0.4.2-1_amd64.deb
+sudo apt install ./owa-bridge_0.5.0-1_amd64.deb
 dpkg -L owa-bridge
 
 # Fedora or another RPM-based distribution
-sudo dnf install ./owa-bridge-0.4.2-1.x86_64.rpm
+sudo dnf install ./owa-bridge-0.5.0-1.x86_64.rpm
 rpm -ql owa-bridge
 
 # Alpine
-sudo apk add ./owa-bridge_0.4.2-r1_x86_64.apk
+sudo apk add ./owa-bridge_0.5.0-r1_x86_64.apk
 apk info -L owa-bridge
 ```
 
@@ -256,16 +256,23 @@ the daemon after every config edit.
 ```console
 owa update check
 owa update check --json
+owa update --json
 ```
 
 The first command should report the current stable release or an
 installation-specific upgrade action. The second output must be one valid JSON
 object with no human `Update available:` line before or after it. Repeat it and
 confirm `cached` is `true`; do not expect a second network request within 24
-hours. Temporarily set `updates.disable_automatic_checks = true`, validate the
+hours. Run the third command only from the release version under test: it must
+return one unstyled action-result object and report `current` without changing
+files. When rehearsing an older direct archive in a disposable directory, it
+must instead verify provenance, update to the selected release, retain the old
+binary as a rollback copy, and report `updated`. A package-managed rehearsal
+must report `action_required` and the exact owner command without changing
+files. Temporarily set `updates.disable_automatic_checks = true`, validate the
 config, and confirm the offline doctor's `update` row is `skip`. Restore the
 setting afterward. MCP and completion byte streams are covered by deterministic
-tests and must never be modified for a manual notice.
+tests and must never be modified for a startup notice.
 
 ## 7. Run the bounded read-only compatibility check
 
