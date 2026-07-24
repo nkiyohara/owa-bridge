@@ -3,6 +3,24 @@
 All notable user-facing changes are recorded here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.4.2 - 2026-07-24
+
+### Session owner upgrades
+
+- Detect a session owner left running by an older installed release, drain it
+  through the authenticated local control API, and start the current binary
+  automatically before handling the requested command.
+- Limit cross-version retries to read-only status inspection and graceful
+  shutdown after the old daemon proves the original request was rejected.
+  Mailbox and calendar operations remain strictly non-retried.
+- Verify the exact config digest before automatic replacement so a policy edit
+  still requires an explicit `owa daemon stop`.
+- Bind replacement shutdown to the rotating credential observed during status
+  inspection, preventing a delayed concurrent updater from stopping the new
+  owner, and close the old browser before releasing its singleton lock.
+- Preserve the final local IPC failure when a detached session owner does not
+  become ready instead of reporting only a generic timeout.
+
 ## 0.4.1 - 2026-07-22
 
 ### Update checking

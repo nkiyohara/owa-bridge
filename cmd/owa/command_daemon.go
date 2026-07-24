@@ -11,7 +11,15 @@ import (
 	"github.com/nkiyohara/owa-bridge/internal/localipc"
 )
 
-const daemonShutdownTimeout = 10 * time.Second
+const (
+	daemonProbeTimeout             = 500 * time.Millisecond
+	daemonControlTimeout           = 3 * time.Second
+	daemonStartupTimeout           = 5 * time.Second
+	daemonShutdownTimeout          = 10 * time.Second
+	daemonReplacementTimeout       = daemonShutdownTimeout + time.Second
+	daemonPollInterval             = 50 * time.Millisecond
+	daemonUnavailableConfirmations = 2
+)
 
 type daemonCommand struct {
 	Start  daemonStartCommand  `cmd:"" help:"Start the session owner in the background."`
@@ -95,10 +103,14 @@ func (*daemonServeCommand) Run(app *runtime) (returnErr error) {
 	case <-app.context.Done():
 	case <-server.Done():
 	}
+	// Close the application boundary and its browsers before Shutdown releases
+	// the singleton listener. A replacement daemon must never overlap ownership
+	// of the same protected browser profile.
+	backendErr := backend.Close()
 	shutdownContext, cancel := context.WithTimeout(context.Background(), daemonShutdownTimeout)
 	defer cancel()
 	shutdownErr := server.Shutdown(shutdownContext)
-	return errors.Join(shutdownErr, <-serveDone)
+	return errors.Join(backendErr, shutdownErr, <-serveDone)
 }
 
 func (*daemonStatusCommand) timeoutContext(app *runtime) (context.Context, context.CancelFunc) {
@@ -160,16 +172,21 @@ func (command *daemonStopCommand) Run(app *runtime) (returnErr error) {
 func waitForDaemon(parent context.Context, app *runtime, client *daemonapi.Client, timeout time.Duration) (daemonapi.Status, error) {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	ticker := time.NewTicker(50 * time.Millisecond)
+	ticker := time.NewTicker(daemonPollInterval)
 	defer ticker.Stop()
+	var lastErr error
 	for {
 		status, err := client.Status(ctx, app.caller())
 		if err == nil {
 			return status, nil
 		}
+		lastErr = err
 		select {
 		case <-ctx.Done():
-			return daemonapi.Status{}, errors.New("session owner did not become ready")
+			return daemonapi.Status{}, fmt.Errorf(
+				"session owner did not become ready: %w",
+				errors.Join(ctx.Err(), lastErr),
+			)
 		case <-ticker.C:
 		}
 	}

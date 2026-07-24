@@ -50,38 +50,6 @@ func (client *Client) Close() error {
 	return nil
 }
 
-// Status negotiates the protocol and exposes the daemon default account.
-func (client *Client) Status(ctx context.Context, caller domain.Caller) (Status, error) {
-	var result Status
-	if err := client.call(ctx, MethodStatus, caller, struct{}{}, &result); err != nil {
-		return Status{}, err
-	}
-	if result.ProtocolVersion != ProtocolVersion {
-		return Status{}, fmt.Errorf("daemon protocol %d is unsupported", result.ProtocolVersion)
-	}
-	if err := result.DefaultAccount.Validate(); err != nil {
-		return Status{}, errors.New("daemon returned an invalid default account")
-	}
-	if err := validateConfigDigest(result.ConfigDigest); err != nil {
-		return Status{}, errors.New("daemon returned an invalid config digest")
-	}
-	return result, nil
-}
-
-// Shutdown requests graceful termination after the response is written.
-func (client *Client) Shutdown(ctx context.Context, caller domain.Caller) error {
-	var result struct {
-		Stopping bool `json:"stopping"`
-	}
-	if err := client.call(ctx, MethodShutdown, caller, struct{}{}, &result); err != nil {
-		return err
-	}
-	if !result.Stopping {
-		return errors.New("daemon did not acknowledge shutdown")
-	}
-	return nil
-}
-
 // Login asks the session owner to ensure an interactive account session.
 func (client *Client) Login(ctx context.Context, account domain.AccountID, caller domain.Caller) (LoginResult, error) {
 	if err := account.Validate(); err != nil {
@@ -280,8 +248,47 @@ func (client *Client) CommitCalendarCancel(ctx context.Context, token string, ca
 }
 
 func (client *Client) call(ctx context.Context, method Method, caller domain.Caller, input, output any) error {
+	return client.callVersion(ctx, ProtocolVersion, method, caller, input, output)
+}
+
+func (client *Client) callVersion(
+	ctx context.Context,
+	protocolVersion int,
+	method Method,
+	caller domain.Caller,
+	input, output any,
+) error {
+	credential, err := localipc.LoadCredential(client.endpoint)
+	if err != nil {
+		return fmt.Errorf("load daemon credential: %w", err)
+	}
+	return client.callWithCredential(
+		ctx,
+		protocolVersion,
+		credential,
+		method,
+		caller,
+		input,
+		output,
+	)
+}
+
+func (client *Client) callWithCredential(
+	ctx context.Context,
+	protocolVersion int,
+	credential string,
+	method Method,
+	caller domain.Caller,
+	input, output any,
+) error {
 	if !method.valid() {
 		return errors.New("invalid daemon method")
+	}
+	if protocolVersion < 1 {
+		return errors.New("invalid daemon protocol version")
+	}
+	if err := localipc.ValidateCredential(credential); err != nil {
+		return errors.New("invalid daemon credential")
 	}
 	if err := caller.Validate(); err != nil {
 		return err
@@ -295,17 +302,13 @@ func (client *Client) call(ctx context.Context, method Method, caller domain.Cal
 		return err
 	}
 	payload, err := json.Marshal(requestEnvelope{
-		Version: ProtocolVersion, ID: id, Method: method, Caller: caller, Params: params,
+		Version: protocolVersion, ID: id, Method: method, Caller: caller, Params: params,
 	})
 	if err != nil {
 		return fmt.Errorf("encode daemon request: %w", err)
 	}
 	if len(payload) > maxRequestBytes {
 		return errors.New("daemon request exceeds maximum size")
-	}
-	credential, err := localipc.LoadCredential(client.endpoint)
-	if err != nil {
-		return fmt.Errorf("load daemon credential: %w", err)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+requestHost+requestPath, bytes.NewReader(payload))
 	if err != nil {
@@ -329,8 +332,26 @@ func (client *Client) call(ctx context.Context, method Method, caller domain.Cal
 	if err := decodeStrict(bytes.NewReader(body), &envelope); err != nil {
 		return errors.New("daemon returned an invalid response")
 	}
-	if envelope.Version != ProtocolVersion || envelope.ID != id && envelope.ID != "" {
+	if envelope.ID != id && envelope.ID != "" {
 		return errors.New("daemon returned a mismatched response")
+	}
+	if envelope.Version != protocolVersion {
+		if envelope.Version < 1 {
+			return errors.New("daemon returned an invalid response")
+		}
+		rejected := response.StatusCode == http.StatusBadRequest &&
+			envelope.ID == id &&
+			envelope.Error != nil &&
+			envelope.Error.Code == "invalid_request" &&
+			envelope.Error.Message == fmt.Sprintf(
+				"unsupported daemon protocol version %d",
+				protocolVersion,
+			)
+		return &ProtocolVersionError{
+			ClientVersion: protocolVersion,
+			DaemonVersion: envelope.Version,
+			rejected:      rejected,
+		}
 	}
 	if envelope.Error != nil {
 		return envelope.Error

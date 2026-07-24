@@ -69,7 +69,7 @@ request ID, subject, recipient, body, token, or screenshot.
 
 ## 2. Download the release
 
-The current supported release is `v0.4.0`. Change both variables together when
+The current supported release is `v0.4.2`. Change both variables together when
 testing another version.
 
 ### macOS or Linux download
@@ -77,8 +77,8 @@ testing another version.
 Run from a new empty directory:
 
 ```console
-VERSION=v0.4.0
-RELEASE=0.4.0
+VERSION=v0.4.2
+RELEASE=0.4.2
 mkdir owa-test-assets
 gh release download "$VERSION" \
   --repo nkiyohara/owa-bridge \
@@ -91,8 +91,8 @@ cd owa-test-assets
 Run from a new empty directory:
 
 ```powershell
-$Version = "v0.4.0"
-$Release = "0.4.0"
+$Version = "v0.4.2"
+$Release = "0.4.2"
 New-Item -ItemType Directory -Path owa-test-assets | Out-Null
 gh release download $Version `
   --repo nkiyohara/owa-bridge `
@@ -205,15 +205,15 @@ compatible disposable host:
 
 ```console
 # Debian or Ubuntu
-sudo apt install ./owa-bridge_0.4.0-1_amd64.deb
+sudo apt install ./owa-bridge_0.4.2-1_amd64.deb
 dpkg -L owa-bridge
 
 # Fedora or another RPM-based distribution
-sudo dnf install ./owa-bridge-0.4.0-1.x86_64.rpm
+sudo dnf install ./owa-bridge-0.4.2-1.x86_64.rpm
 rpm -ql owa-bridge
 
 # Alpine
-sudo apk add ./owa-bridge_0.4.0-r1_x86_64.apk
+sudo apk add ./owa-bridge_0.4.2-r1_x86_64.apk
 apk info -L owa-bridge
 ```
 

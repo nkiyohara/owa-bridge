@@ -66,8 +66,14 @@ The wire format is strict, versioned JSON over HTTP semantics on that local
 stream. It has a closed method registry, bounded request/response bodies,
 bounded concurrency, no redirects, and no automatic retry of application
 operations. Clients also reject a stale config digest or different executable
-version before invoking mailbox operations. It never binds TCP. See
-[ADR 0003](adr/0003-authenticated-local-session-owner.md).
+version before invoking mailbox operations. When an installed binary changes
+but the exact config digest does not, the next client may inspect and gracefully
+stop the authenticated old owner through stable lifecycle controls before
+starting the current binary. The stop is bound to the inspected credential
+generation, and the old browser closes before its singleton lock is released.
+Mail, calendar, login, preview, and commit calls never use that compatibility
+path. It never binds TCP. See [ADR
+0003](adr/0003-authenticated-local-session-owner.md).
 
 The default MCP transport is stdio. Optional Streamable HTTP support may be
 added for advanced local deployments, but must bind to loopback, validate the
