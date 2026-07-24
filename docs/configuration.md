@@ -54,7 +54,7 @@ canary, or refresh token. Browser session material belongs to the dedicated
 browser profile and the in-memory session owner, never this file.
 
 `disable_automatic_checks = true` disables opportunistic stable-release checks
-without disabling the explicit `owa update check` command. Set
+without disabling explicit `owa update` or `owa update check` commands. Set
 `OWA_NO_UPDATE_CHECK=1` for a process-level override. Checks read only the
 public latest-release metadata, are cached for 24 hours, and never run through
 MCP, completion, or JSON notification output.

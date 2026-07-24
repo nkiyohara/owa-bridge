@@ -62,6 +62,16 @@ func UpdateCachePath() (string, error) {
 	return filepath.Join(state, "updates", "latest.json"), nil
 }
 
+// UpdateTrustCachePath returns the private cache for Sigstore TUF trust
+// metadata used only by an explicit direct self-update.
+func UpdateTrustCachePath() (string, error) {
+	state, err := StateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(state, "updates", "sigstore"), nil
+}
+
 func stateDir(
 	goos, home, configDirectory, cacheDirectory string,
 	configErr, cacheErr error,

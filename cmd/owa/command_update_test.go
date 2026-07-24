@@ -36,10 +36,101 @@ func TestUpdateCheckProducesHumanAndMachineReadableStatus(t *testing.T) {
 			if report.Status != updatecheck.StatusAvailable || strings.Contains(stdout.String(), "Update available:") {
 				t.Fatalf("unexpected machine output: %s", stdout.String())
 			}
-		} else if !strings.Contains(stdout.String(), "Update available: owa 0.3.2 -> v0.4.0") ||
+		} else if !strings.Contains(stdout.String(), "Update available") ||
+			!strings.Contains(stdout.String(), "0.3.2 → 0.4.0") ||
 			!strings.Contains(stdout.String(), "brew upgrade owa-bridge") {
 			t.Fatalf("unexpected human output: %s", stdout.String())
 		}
+	}
+}
+
+func TestCurrentUpdateJSONOmitsUpgradeInstructions(t *testing.T) {
+	result := updatecheck.Result{
+		Status:          updatecheck.StatusCurrent,
+		CurrentVersion:  "0.4.2",
+		LatestVersion:   "v0.4.2",
+		UpdateAvailable: false,
+		ReleaseURL:      "https://github.com/nkiyohara/owa-bridge/releases/tag/v0.4.2",
+		CheckedAt:       time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC).Format(time.RFC3339),
+	}
+	var stdout bytes.Buffer
+	app := updateTestRuntime(t, &stdout, result)
+	if err := (&updateCheckCommand{JSON: true}).Run(app); err != nil {
+		t.Fatal(err)
+	}
+	var report map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := report["upgrade"]; exists {
+		t.Fatalf("current report contains upgrade instruction: %s", stdout.String())
+	}
+	if _, exists := report["installMethod"]; exists {
+		t.Fatalf("current report contains install method: %s", stdout.String())
+	}
+}
+
+func TestUpdateUsesPackageManagerWithoutChangingFiles(t *testing.T) {
+	result := updatecheck.Result{
+		Status:          updatecheck.StatusAvailable,
+		CurrentVersion:  "0.4.1",
+		LatestVersion:   "v0.4.2",
+		UpdateAvailable: true,
+		ReleaseURL:      "https://github.com/nkiyohara/owa-bridge/releases/tag/v0.4.2",
+	}
+	var stdout bytes.Buffer
+	app := updateTestRuntime(t, &stdout, result)
+	app.installMethod = func() updatecheck.InstallMethod { return updatecheck.InstallHomebrew }
+	app.installUpdate = func(
+		context.Context,
+		func(updatecheck.InstallProgress),
+	) (updatecheck.InstallResult, error) {
+		t.Fatal("package-manager installation attempted direct replacement")
+		return updatecheck.InstallResult{}, nil
+	}
+	if err := (&updateApplyCommand{}).Run(app); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "Managed by Homebrew") ||
+		!strings.Contains(stdout.String(), "brew upgrade owa-bridge") ||
+		!strings.Contains(stdout.String(), "did not modify files") {
+		t.Fatalf("unexpected package-manager output: %q", stdout.String())
+	}
+}
+
+func TestUpdateDirectInstallProducesStableJSON(t *testing.T) {
+	var stdout bytes.Buffer
+	app := updateTestRuntime(t, &stdout, updatecheck.Result{})
+	app.installMethod = func() updatecheck.InstallMethod { return updatecheck.InstallDirect }
+	app.installUpdate = func(
+		_ context.Context,
+		progress func(updatecheck.InstallProgress),
+	) (updatecheck.InstallResult, error) {
+		if progress != nil {
+			t.Fatal("JSON update enabled progress output")
+		}
+		return updatecheck.InstallResult{
+			Status:          updatecheck.InstallStatusUpdated,
+			PreviousVersion: "0.4.1",
+			CurrentVersion:  "0.4.2",
+			LatestVersion:   "v0.4.2",
+			ReleaseURL:      "https://github.com/nkiyohara/owa-bridge/releases/tag/v0.4.2",
+			Archive:         "owa-bridge_0.4.2_linux_amd64.tar.gz",
+			BackupPath:      "/synthetic/owa.backup-0.4.1",
+		}, nil
+	}
+	if err := (&updateApplyCommand{JSON: true}).Run(app); err != nil {
+		t.Fatal(err)
+	}
+	var report updateActionReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.Status != "updated" || !report.Updated ||
+		report.InstallMethod != updatecheck.InstallDirect ||
+		len(report.Verification) != 4 ||
+		strings.Contains(stdout.String(), "\x1b[") {
+		t.Fatalf("unexpected direct update JSON: %s", stdout.String())
 	}
 }
 
@@ -54,7 +145,8 @@ func TestAutomaticUpdateNoticeIsTTYOnlyAndHonorsOptOuts(t *testing.T) {
 	app.stderr = &stderr
 	app.interactiveOutput = func() bool { return true }
 	app.maybeNotifyUpdate(t.Context())
-	if !strings.Contains(stderr.String(), "Update available:") {
+	if !strings.Contains(stderr.String(), "Update available") ||
+		!strings.Contains(stderr.String(), "Run owa update") {
 		t.Fatalf("TTY notice missing: %q", stderr.String())
 	}
 
@@ -107,10 +199,36 @@ func TestMachineSurfacesNeverOfferAutomaticNotice(t *testing.T) {
 	}
 }
 
+func TestUpdateViewHonorsNoColor(t *testing.T) {
+	var stdout bytes.Buffer
+	app := updateTestRuntime(t, &stdout, updatecheck.Result{})
+	app.interactiveOutput = func() bool { return true }
+	app.lookupEnv = func(name string) (string, bool) {
+		if name == "NO_COLOR" {
+			return "1", true
+		}
+		return "", false
+	}
+	view := newUpdateView(app, app.stdout, true)
+	if err := view.writeAction(updateActionReport{
+		Status:         "action_required",
+		CurrentVersion: "0.4.1",
+		LatestVersion:  "v0.4.2",
+		InstallMethod:  updatecheck.InstallScoop,
+		Command:        "scoop update owa-bridge",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stdout.String(), "\x1b[") {
+		t.Fatalf("NO_COLOR output contains ANSI escapes: %q", stdout.String())
+	}
+}
+
 func updateTestRuntime(t *testing.T, stdout *bytes.Buffer, result updatecheck.Result) *runtime {
 	t.Helper()
 	app := newRuntime(context.Background(), filepath.Join(t.TempDir(), "missing.toml"), stdout, &bytes.Buffer{}, buildinfo.Current())
 	app.checkUpdate = func(context.Context) (updatecheck.Result, error) { return result, nil }
+	app.checkUpdateFresh = func(context.Context) (updatecheck.Result, error) { return result, nil }
 	app.installMethod = func() updatecheck.InstallMethod { return updatecheck.InstallHomebrew }
 	return app
 }

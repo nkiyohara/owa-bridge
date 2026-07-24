@@ -10,10 +10,10 @@ func TestUpgradeAdviceCoversEveryInstallationMethod(t *testing.T) {
 		{InstallHomebrew, "brew upgrade owa-bridge"},
 		{InstallWinGet, "winget upgrade --id nkiyohara.OWABridge --exact"},
 		{InstallScoop, "scoop update owa-bridge"},
-		{InstallDeb, "sudo apt install"},
-		{InstallRPM, "sudo dnf install"},
-		{InstallAPK, "sudo apk add"},
-		{InstallDirect, "release page"},
+		{InstallDeb, "sudo apt install ./owa-bridge_0.4.0-*_*.deb"},
+		{InstallRPM, "sudo dnf install ./owa-bridge-0.4.0-*.rpm"},
+		{InstallAPK, "sudo apk add ./owa-bridge_0.4.0-r*_*.apk"},
+		{InstallDirect, "owa update"},
 	}
 	for _, test := range tests {
 		if got := UpgradeAdvice(test.method, "v0.4.0"); !contains(got, test.want) {

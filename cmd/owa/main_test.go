@@ -43,6 +43,67 @@ func TestRunShowsCommandGroupHelp(t *testing.T) {
 	}
 }
 
+func TestRootHelpCommandDescriptionsMatchCommandHelp(t *testing.T) {
+	t.Parallel()
+
+	var root bytes.Buffer
+	var rootErr bytes.Buffer
+	if code := run(context.Background(), nil, &root, &rootErr); code != 0 {
+		t.Fatalf("root help code = %d, stderr = %q", code, rootErr.String())
+	}
+	commands := []string{
+		"config",
+		"doctor",
+		"login",
+		"mail",
+		"calendar",
+		"daemon",
+		"mcp",
+		"update",
+		"completion",
+		"version",
+	}
+	for _, command := range commands {
+		description := rootCommandDescription(t, root.String(), command)
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		if code := run(context.Background(), []string{command, "--help"}, &stdout, &stderr); code != 0 {
+			t.Fatalf("%s help code = %d, stderr = %q", command, code, stderr.String())
+		}
+		if !strings.Contains(stdout.String(), description+".") {
+			t.Errorf(
+				"%s root description %q is not present in command help:\n%s",
+				command,
+				description,
+				stdout.String(),
+			)
+		}
+	}
+}
+
+func TestUpdateDefaultsToActionAndKeepsCheckOnlySubcommand(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if code := run(context.Background(), []string{"update", "--json"}, &stdout, &stderr); code != 1 {
+		t.Fatalf("development update code = %d, want 1; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "development builds cannot self-update") {
+		t.Fatalf("owa update did not select the default update action: %q", stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"update", "check", "--help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("update check help code = %d, stderr=%q", code, stderr.String())
+	}
+	normalizedHelp := strings.Join(strings.Fields(stdout.String()), " ")
+	if !strings.Contains(normalizedHelp, "Use check to report the latest stable release without installing") {
+		t.Fatalf("update check help is ambiguous: %q", stdout.String())
+	}
+}
+
 func TestRunInitializesAndValidatesConfig(t *testing.T) {
 	t.Parallel()
 
@@ -116,4 +177,16 @@ func TestRunRejectsUnknownCommand(t *testing.T) {
 	if !strings.Contains(stderr.String(), "unexpected argument") {
 		t.Fatalf("stderr did not explain parse error: %q", stderr.String())
 	}
+}
+
+func rootCommandDescription(t *testing.T, help, command string) string {
+	t.Helper()
+	for _, line := range strings.Split(help, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == command {
+			return strings.Join(fields[1:], " ")
+		}
+	}
+	t.Fatalf("root help is missing command %q:\n%s", command, help)
+	return ""
 }

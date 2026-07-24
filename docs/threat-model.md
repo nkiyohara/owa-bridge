@@ -72,9 +72,13 @@ automation framework.
 - Produce checksums and SBOMs for every release artifact.
 - Attach workload-identity signatures only when their public transparency
   metadata is compatible with the repository's privacy requirement.
-- Limit update discovery to an unauthenticated, bounded read of the public
-  stable-release endpoint. Send no Outlook or machine identifiers, cache both
-  success and failure for 24 hours, and never replace a binary automatically.
+- Limit startup update discovery to an unauthenticated, bounded read of the
+  public stable-release endpoint. Send no Outlook or machine identifiers,
+  cache both success and failure for 24 hours, and never let a background
+  check replace a binary. An explicit direct self-update must verify the exact
+  tagged workflow's Sigstore identity, signed checksum inventory, candidate
+  version and platform, and preserve a rollback copy. Never modify files owned
+  by a package manager.
 
 ## Explicitly unsupported
 

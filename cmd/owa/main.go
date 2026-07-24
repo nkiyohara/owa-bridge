@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/alecthomas/kong"
@@ -27,7 +28,7 @@ type cli struct {
 	Calendar   calendarCommand   `cmd:"" help:"Read and manage calendar events."`
 	Daemon     daemonCommand     `cmd:"" help:"Run and inspect the local session owner."`
 	MCP        mcpCommand        `cmd:"" help:"Expose guarded Outlook tools over MCP."`
-	Update     updateCommand     `cmd:"" help:"Check for newer stable releases."`
+	Update     updateCommand     `cmd:"" help:"Install verified updates or show the package-manager command."`
 	Completion completionCommand `cmd:"" help:"Generate a shell completion script."`
 }
 
@@ -54,32 +55,8 @@ func (command *versionCommand) Run(app *runtime) error {
 }
 
 func run(executionContext context.Context, arguments []string, stdout, stderr io.Writer) int {
-	if !completionEnvironmentActive() && (len(arguments) == 0 ||
-		(len(arguments) == 1 && (arguments[0] == "--help" || arguments[0] == "-h"))) {
-		_, err := fmt.Fprint(stdout, `owa: Local-first Outlook Web mail and calendar.
-
-Usage:
-  owa <command> [flags]
-
-Commands:
-  config     Initialize and inspect configuration
-  doctor     Diagnose local setup and opt-in OWA compatibility
-  login      Open the interactive Outlook Web sign-in
-  mail       Read and manage mail
-  calendar   Read and manage calendar events
-  daemon     Run and inspect the local session owner
-  mcp        Expose guarded Outlook tools over MCP
-  update     Check for newer stable releases
-  completion Generate a shell completion script
-  version    Print version and build information
-
-Run "owa <command> --help" for command-specific help.
-`)
-		if err != nil {
-			_, _ = fmt.Fprintln(stderr, err)
-			return 1
-		}
-		return 0
+	if !completionEnvironmentActive() && len(arguments) == 0 {
+		arguments = []string{"--help"}
 	}
 
 	var commandLine cli
@@ -88,6 +65,7 @@ Run "owa <command> --help" for command-specific help.
 		&commandLine,
 		kong.Name("owa"),
 		kong.Description("Local-first Outlook Web mail and calendar."),
+		kong.Help(compactHelpPrinter),
 		kong.UsageOnError(),
 		kong.Writers(stdout, stderr),
 		kong.Exit(func(code int) { exitCode = code }),
@@ -120,14 +98,48 @@ Run "owa <command> --help" for command-specific help.
 	}
 
 	app := newRuntime(executionContext, commandLine.ConfigPath, stdout, stderr, buildinfo.Current())
+	if shouldOfferAutomaticUpdateNotice(arguments) {
+		app.maybeNotifyUpdate(executionContext)
+	}
 	if err := parsed.Run(app); err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 		return 1
 	}
-	if shouldOfferAutomaticUpdateNotice(arguments) {
-		app.maybeNotifyUpdate(executionContext)
-	}
 	return 0
+}
+
+func compactHelpPrinter(options kong.HelpOptions, ctx *kong.Context) error {
+	if ctx.Selected() != nil {
+		return kong.DefaultHelpPrinter(options, ctx)
+	}
+	width := 0
+	for _, command := range ctx.Model.Children {
+		if !command.Hidden && len(command.Name) > width {
+			width = len(command.Name)
+		}
+	}
+	var help strings.Builder
+	_, _ = fmt.Fprintf(&help, "%s: %s\n\n", ctx.Model.Name, strings.TrimSuffix(ctx.Model.Help, "."))
+	_, _ = fmt.Fprintf(&help, "Usage:\n  %s <command> [flags]\n\nCommands:\n", ctx.Model.Name)
+	for _, command := range ctx.Model.Children {
+		if command.Hidden {
+			continue
+		}
+		_, _ = fmt.Fprintf(
+			&help,
+			"  %-*s %s\n",
+			width,
+			command.Name,
+			strings.TrimSuffix(command.Help, "."),
+		)
+	}
+	_, _ = fmt.Fprintf(
+		&help,
+		"\nRun %q for command-specific help.\n",
+		ctx.Model.Name+" <command> --help",
+	)
+	_, err := io.WriteString(ctx.Stdout, help.String())
+	return err
 }
 
 func outputIsTerminal(writer io.Writer) bool {
