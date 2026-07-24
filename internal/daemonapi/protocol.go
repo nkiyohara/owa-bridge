@@ -93,6 +93,32 @@ func (failure *Error) Error() string {
 	return failure.Message
 }
 
+// ProtocolVersionError identifies an authenticated daemon response that used a
+// different private protocol version. RequestRejected is true only when the
+// daemon proved that it rejected the request before dispatch.
+type ProtocolVersionError struct {
+	ClientVersion int
+	DaemonVersion int
+	rejected      bool
+}
+
+func (failure *ProtocolVersionError) Error() string {
+	if failure == nil {
+		return ""
+	}
+	return fmt.Sprintf(
+		"daemon protocol %d is incompatible with client protocol %d",
+		failure.DaemonVersion,
+		failure.ClientVersion,
+	)
+}
+
+// RequestRejected reports whether retrying a read-only status call or the
+// control-only shutdown call at the daemon's exact version is unambiguous.
+func (failure *ProtocolVersionError) RequestRejected() bool {
+	return failure != nil && failure.rejected
+}
+
 // Status describes a daemon without revealing its config or state paths.
 type Status struct {
 	ProtocolVersion int              `json:"protocolVersion"`
@@ -101,6 +127,35 @@ type Status struct {
 	StartedAt       time.Time        `json:"startedAt"`
 	DefaultAccount  domain.AccountID `json:"defaultAccount"`
 	ConfigDigest    string           `json:"configDigest"`
+}
+
+// OwnerSnapshot binds validated status metadata to one authenticated daemon
+// generation. Its credential and protocol controls are deliberately private.
+type OwnerSnapshot struct {
+	status          Status
+	protocolVersion int
+	credential      string
+}
+
+// Status returns a copy of the content-free owner metadata.
+func (snapshot OwnerSnapshot) Status() Status { return snapshot.status }
+
+// String keeps the generation credential out of ordinary formatted output.
+func (snapshot OwnerSnapshot) String() string {
+	return fmt.Sprintf(
+		"daemon owner version %s PID %d protocol %d",
+		snapshot.status.Version,
+		snapshot.status.ProcessID,
+		snapshot.status.ProtocolVersion,
+	)
+}
+
+// GoString keeps the generation credential out of Go-syntax debug output.
+func (snapshot OwnerSnapshot) GoString() string { return snapshot.String() }
+
+// MarshalJSON rejects serialization of the generation-bound control handle.
+func (OwnerSnapshot) MarshalJSON() ([]byte, error) {
+	return nil, errors.New("daemon owner snapshot cannot be serialized")
 }
 
 // ApprovalInput commits an exact in-memory operation preview.

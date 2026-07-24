@@ -3,10 +3,13 @@ package daemonapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -394,6 +397,167 @@ func TestClientAndServerRoundTripOverLocalIPC(t *testing.T) {
 	case <-server.Done():
 	default:
 		t.Fatal("server did not publish the authenticated shutdown request")
+	}
+}
+
+func TestClientInspectsAndStopsIncompatibleDaemon(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	endpoint, err := localipc.ResolveInState(
+		filepath.Join(root, "config.toml"), filepath.Join(root, "state"),
+	)
+	if err != nil {
+		t.Fatalf("ResolveInState() error = %v", err)
+	}
+	listener, err := localipc.Listen(endpoint)
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	credential, err := localipc.IssueCredential(endpoint)
+	if err != nil {
+		_ = listener.Close()
+		t.Fatalf("IssueCredential() error = %v", err)
+	}
+
+	previousProtocol := ProtocolVersion - 1
+	type observedRequest struct {
+		version int
+		method  Method
+	}
+	var observedMu sync.Mutex
+	var observed []observedRequest
+	server := &http.Server{
+		ReadHeaderTimeout: time.Second,
+		Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			var envelope requestEnvelope
+			if err := json.NewDecoder(request.Body).Decode(&envelope); err != nil {
+				t.Errorf("decode request: %v", err)
+				writer.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			observedMu.Lock()
+			observed = append(observed, observedRequest{version: envelope.Version, method: envelope.Method})
+			observedMu.Unlock()
+
+			response := responseEnvelope{Version: previousProtocol, ID: envelope.ID}
+			status := http.StatusOK
+			var responseErr error
+			switch {
+			case envelope.Version != previousProtocol:
+				status = http.StatusBadRequest
+				response.Error = &Error{
+					Code:    "invalid_request",
+					Message: fmt.Sprintf("unsupported daemon protocol version %d", envelope.Version),
+				}
+			case envelope.Method == MethodStatus:
+				encoded, encodeErr := json.Marshal(Status{
+					ProtocolVersion: previousProtocol,
+					Version:         "0.4.1",
+					ProcessID:       123,
+					StartedAt:       time.Unix(1, 0).UTC(),
+					DefaultAccount:  "work",
+					ConfigDigest:    strings.Repeat("a", 64),
+				})
+				response.Result = encoded
+				responseErr = encodeErr
+			case envelope.Method == MethodShutdown:
+				response.Result = json.RawMessage(`{"stopping":true}`)
+			default:
+				t.Errorf("incompatible daemon received retried method %q", envelope.Method)
+				response.Result = json.RawMessage(`{}`)
+			}
+			if responseErr != nil {
+				t.Errorf("encode response: %v", responseErr)
+				writer.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			writer.Header().Set("Content-Type", contentType)
+			writer.WriteHeader(status)
+			if err := json.NewEncoder(writer).Encode(response); err != nil {
+				t.Errorf("write response: %v", err)
+			}
+		}),
+	}
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- server.Serve(listener) }()
+	t.Cleanup(func() {
+		_ = server.Close()
+		_ = listener.Close()
+		_ = credential.Close()
+		<-serveDone
+	})
+
+	client, err := NewClient(endpoint)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	caller := domain.Caller{Surface: "cli", Instance: "process-1"}
+	statusResult, statusErr := client.Status(t.Context(), caller)
+	var versionErr *ProtocolVersionError
+	if !errors.As(statusErr, &versionErr) || !versionErr.RequestRejected() ||
+		versionErr.ClientVersion != ProtocolVersion ||
+		versionErr.DaemonVersion != previousProtocol {
+		t.Fatalf("Status() error = %v, want rejected protocol mismatch", statusErr)
+	}
+	if statusResult.Version != "" {
+		t.Fatalf("Status() result = %+v, want fail-closed zero value", statusResult)
+	}
+	owner, ownerErr := client.InspectOwner(t.Context(), caller)
+	if !errors.As(ownerErr, &versionErr) {
+		t.Fatalf("InspectOwner() error = %v, want protocol mismatch", ownerErr)
+	}
+	renderedOwner := fmt.Sprintf("%+v %#v", owner, owner)
+	if strings.Contains(renderedOwner, credential.Value()) {
+		t.Fatal("formatted owner snapshot exposed its credential")
+	}
+	encodedOwner, err := json.Marshal(owner)
+	if err == nil || len(encodedOwner) != 0 ||
+		!strings.Contains(err.Error(), "cannot be serialized") {
+		t.Fatalf("json.Marshal(owner) = %s, %v", encodedOwner, err)
+	}
+	ownerStatus := owner.Status()
+	if ownerStatus.Version != "0.4.1" ||
+		ownerStatus.ProtocolVersion != previousProtocol {
+		t.Fatalf("InspectOwner() status = %+v", ownerStatus)
+	}
+
+	observedMu.Lock()
+	beforeLogin := len(observed)
+	observedMu.Unlock()
+	if _, err := client.Login(t.Context(), "work", caller); !errors.As(err, &versionErr) {
+		t.Fatalf("Login() error = %v, want protocol mismatch", err)
+	}
+	observedMu.Lock()
+	loginRequests := len(observed) - beforeLogin
+	observedMu.Unlock()
+	if loginRequests != 1 {
+		t.Fatalf("Login() made %d requests across a protocol mismatch, want 1", loginRequests)
+	}
+
+	if err := client.Shutdown(t.Context(), caller); err != nil {
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+	observedMu.Lock()
+	defer observedMu.Unlock()
+	want := []observedRequest{
+		{version: ProtocolVersion, method: MethodStatus},
+		{version: previousProtocol, method: MethodStatus},
+		{version: ProtocolVersion, method: MethodStatus},
+		{version: previousProtocol, method: MethodStatus},
+		{version: ProtocolVersion, method: MethodLogin},
+		{version: ProtocolVersion, method: MethodStatus},
+		{version: previousProtocol, method: MethodStatus},
+		{version: previousProtocol, method: MethodShutdown},
+	}
+	if len(observed) != len(want) {
+		t.Fatalf("observed requests = %+v, want %+v", observed, want)
+	}
+	for index := range want {
+		if observed[index] != want[index] {
+			t.Fatalf("observed request %d = %+v, want %+v", index, observed[index], want[index])
+		}
 	}
 }
 

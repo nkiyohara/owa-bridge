@@ -67,6 +67,8 @@ must already authorize the signed-in user. Keep separate aliases for the user's
 own mailbox and each explicitly routed mailbox, and select one with `--account`.
 
 The daemon publishes a SHA-256 digest of the exact secret-free config it loaded.
-CLI and MCP compare it before every new connection and fail closed if the file
-or executable version changed. Run `owa daemon stop` and retry to apply an edit;
-the next command starts a fresh owner with the new policy.
+CLI and MCP compare it before every new connection. If only the executable or
+private protocol version changed, the next command drains the authenticated old
+owner and starts the current binary automatically. If the config digest changed,
+the client fails closed instead; run `owa daemon stop` and retry to apply the
+edit and start a fresh owner with the new policy.

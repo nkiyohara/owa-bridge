@@ -2,6 +2,7 @@
 
 - Status: accepted
 - Date: 2026-07-17
+- Amended: 2026-07-24
 
 ## Context
 
@@ -51,6 +52,17 @@ Protocol version 8 adds the optional caller-bound `login.terminal` state
 machine. Its path-free page projection and one-key actions remain on the same
 owner-only authenticated IPC and never expose authorization material.
 
+Keep `status` and `shutdown` as the only stable lifecycle controls across
+protocol versions. After an authenticated daemon proves that a request was
+rejected solely because of its envelope version, a newer client may retry
+read-only status inspection and graceful shutdown using the exact version
+reported by that daemon. It must compare the returned config digest before
+replacement. The status snapshot and shutdown request must use the same
+in-memory rotating credential so a delayed concurrent updater cannot stop a
+newer owner. Drain active work and close the old browser before releasing the
+singleton endpoint; start the current binary only afterward. No mail, calendar,
+login, preview, or commit call may use this compatibility path.
+
 ## Consequences
 
 - Outlook authorization never crosses the daemon boundary.
@@ -62,3 +74,6 @@ owner-only authenticated IPC and never expose authorization material.
   Unix peer verification uses the already-pinned `x/sys` package.
 - Crash recovery may leave a socket or credential file, but singleton ownership
   validates and safely replaces only current-user, expected file types.
+- Installing a newer binary does not leave an incompatible owner blocking the
+  next command. Automatic replacement drains active calls but intentionally
+  discards release-bound in-memory sessions and previews.

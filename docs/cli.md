@@ -321,6 +321,10 @@ state file. Requests are strict, versioned, size-bounded JSON calls over the
 local transport. `stop` is authenticated, drains active calls, and removes the
 credential and socket. Stopping an idle daemon closes all account browsers;
 later commands start a fresh owner and reuse the protected browser profiles.
+After a binary update, the next command verifies the unchanged config digest,
+drains an older release through the same authenticated lifecycle controls, and
+starts the installed binary automatically. Config edits still require an
+explicit `owa daemon stop`.
 
 ## List calendar metadata
 

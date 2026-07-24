@@ -49,6 +49,7 @@ type runtime struct {
 	stderr            io.Writer
 	launch            browserLauncher
 	endpoint          func(string) (localipc.Endpoint, error)
+	startDaemon       func(context.Context, string) error
 	runCommand        commandRunner
 	processID         int
 	checkUpdate       func(context.Context) (updatecheck.Result, error)
@@ -73,7 +74,8 @@ func newRuntime(
 		launch: func(ctx context.Context, options browser.Options) (browserHandle, error) {
 			return browser.Launch(ctx, options)
 		},
-		endpoint: localipc.Resolve,
+		endpoint:    localipc.Resolve,
+		startDaemon: startDetachedDaemon,
 		runCommand: func(ctx context.Context, stdout, stderr io.Writer, name string, args ...string) error {
 			command := exec.CommandContext(ctx, name, args...) // #nosec G204 -- name and args come from typed client setup plans.
 			command.Stdout = stdout
@@ -127,19 +129,43 @@ func (app *runtime) openDaemon(ctx context.Context) (*daemonapi.Client, daemonap
 	if err != nil {
 		return nil, daemonapi.Status{}, err
 	}
-	probeContext, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-	status, statusErr := client.Status(probeContext, app.caller())
+	probeContext, cancel := context.WithTimeout(ctx, daemonProbeTimeout)
+	owner, statusErr := client.InspectOwner(probeContext, app.caller())
 	cancel()
+	status := owner.Status()
 	if statusErr == nil {
-		if err := app.validateDaemonStatus(status, configDigest); err != nil {
+		if err := app.validateDaemonConfig(status, configDigest); err != nil {
+			return nil, daemonapi.Status{}, errors.Join(err, client.Close())
+		}
+		if status.Version != app.info.Version {
+			status, err = app.replaceDaemon(ctx, client, owner, configPath, configDigest)
+			if err != nil {
+				return nil, daemonapi.Status{}, errors.Join(err, client.Close())
+			}
+		}
+		return client, status, nil
+	}
+	var versionErr *daemonapi.ProtocolVersionError
+	if errors.As(statusErr, &versionErr) {
+		if status.ProcessID < 1 || status.ProtocolVersion != versionErr.DaemonVersion {
+			return nil, daemonapi.Status{}, errors.Join(
+				fmt.Errorf("inspect incompatible session owner: %w", statusErr),
+				client.Close(),
+			)
+		}
+		if err := app.validateDaemonConfig(status, configDigest); err != nil {
+			return nil, daemonapi.Status{}, errors.Join(err, client.Close())
+		}
+		status, err = app.replaceDaemon(ctx, client, owner, configPath, configDigest)
+		if err != nil {
 			return nil, daemonapi.Status{}, errors.Join(err, client.Close())
 		}
 		return client, status, nil
 	}
-	if err := startDetachedDaemon(ctx, configPath); err != nil {
+	if err := app.startDaemon(ctx, configPath); err != nil {
 		return nil, daemonapi.Status{}, errors.Join(err, client.Close())
 	}
-	status, err = waitForDaemon(ctx, app, client, 5*time.Second)
+	status, err = waitForDaemon(ctx, app, client, daemonStartupTimeout)
 	if err != nil {
 		return nil, daemonapi.Status{}, errors.Join(err, client.Close())
 	}
@@ -147,19 +173,6 @@ func (app *runtime) openDaemon(ctx context.Context) (*daemonapi.Client, daemonap
 		return nil, daemonapi.Status{}, errors.Join(err, client.Close())
 	}
 	return client, status, nil
-}
-
-func (app *runtime) validateDaemonStatus(status daemonapi.Status, configDigest string) error {
-	if status.ConfigDigest != configDigest {
-		return errors.New("session owner has stale configuration; run `owa daemon stop` and retry")
-	}
-	if status.Version != app.info.Version {
-		return fmt.Errorf(
-			"session owner version %s differs from CLI %s; run `owa daemon stop` and retry",
-			status.Version, app.info.Version,
-		)
-	}
-	return nil
 }
 
 func (app *runtime) resolvedConfigPath() (string, error) {
